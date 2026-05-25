@@ -1,0 +1,63 @@
+export const courses = [
+  { id: 1, courseCode: "MAT-XII", courseName: "Matematika Wajib", faculty: "MIPA", lecturers: [], category: "learning" },
+  { id: 2, courseCode: "MTK-MIN", courseName: "Matematika Peminatan", faculty: "MIPA", lecturers: [], category: "learning" },
+  { id: 3, courseCode: "FIS-XII", courseName: "Fisika", faculty: "MIPA", lecturers: [], category: "learning" },
+  { id: 4, courseCode: "KIM-XII", courseName: "Kimia", faculty: "MIPA", lecturers: [], category: "learning" },
+  { id: 5, courseCode: "BIO-XII", courseName: "Biologi", faculty: "MIPA", lecturers: [], category: "learning" },
+  { id: 6, courseCode: "BIN-XII", courseName: "Bahasa Indonesia", faculty: "Bahasa", lecturers: [], category: "learning" },
+  { id: 7, courseCode: "BIG-XII", courseName: "Bahasa Inggris", faculty: "Bahasa", lecturers: [], category: "learning" },
+  { id: 8, courseCode: "ARB-XII", courseName: "Bahasa Arab", faculty: "Bahasa", lecturers: [], category: "learning" },
+  { id: 9, courseCode: "EKO-XII", courseName: "Ekonomi", faculty: "IPS", lecturers: [], category: "learning" },
+  { id: 10, courseCode: "GEO-XII", courseName: "Geografi", faculty: "IPS", lecturers: [], category: "learning" },
+  { id: 11, courseCode: "SOS-XII", courseName: "Sosiologi", faculty: "IPS", lecturers: [], category: "learning" },
+  { id: 12, courseCode: "SJR-XII", courseName: "Sejarah Indonesia", faculty: "IPS", lecturers: [], category: "learning" },
+  { id: 13, courseCode: "PKN-XII", courseName: "PPKn", faculty: "Umum", lecturers: [], category: "learning" },
+  { id: 14, courseCode: "PAI-XII", courseName: "Pendidikan Agama Islam", faculty: "Agama", lecturers: [], category: "learning" },
+  { id: 15, courseCode: "FSH-XII", courseName: "Fikih", faculty: "Agama", lecturers: [], category: "learning" },
+  { id: 16, courseCode: "QUR-XII", courseName: "Al-Qur'an Hadits", faculty: "Agama", lecturers: [], category: "learning" },
+  { id: 17, courseCode: "AKD-XII", courseName: "Akidah Akhlak", faculty: "Agama", lecturers: [], category: "learning" },
+  { id: 18, courseCode: "SKI-XII", courseName: "Sejarah Kebudayaan Islam", faculty: "Agama", lecturers: [], category: "learning" },
+  { id: 19, courseCode: "TIK-XII", courseName: "Teknologi Informasi", faculty: "Umum", lecturers: [], category: "learning" },
+  { id: 20, courseCode: "SEN-XII", courseName: "Seni Budaya", faculty: "Umum", lecturers: [], category: "learning" },
+  { id: 21, courseCode: "PJK-XII", courseName: "PJOK", faculty: "Umum", lecturers: [], category: "learning" },
+];
+
+export const sectionTemplates = [
+  { key: "generalInfo", title: "INFORMASI UMUM", icon: "📋" },
+  { key: "whoIAm", title: "TENTANG PENGAJAR", icon: "👤" },
+  { key: "teachingPlan", title: "RENCANA PEMBELAJARAN", icon: "📅" },
+  { key: "group", title: "KELOMPOK BELAJAR", icon: "👥" },
+  { key: "booksResources", title: "BUKU & SUMBER BELAJAR", icon: "📚" },
+  { key: "assessment", title: "PENILAIAN & TUGAS", icon: "📝" },
+  { key: "declaration", title: "DEKLARASI AKADEMIK", icon: "✅" },
+];
+
+export const courseDetailsData = {
+  1: {
+    generalInfo: "Mata pelajaran Matematika Wajib untuk kelas XII mencakup materi statistika, peluang, dan kalkulus dasar.",
+    whoIAm: "",
+    teachingPlan: "",
+    group: "",
+    booksResources: "",
+    assessment: "",
+    declaration: "",
+  },
+  6: {
+    generalInfo: "Bahasa Indonesia untuk kelas XII mencakup teks editorial, artikel ilmiah, dan karya sastra.",
+    whoIAm: "",
+    teachingPlan: "",
+    group: "",
+    booksResources: "",
+    assessment: "",
+    declaration: "",
+  },
+  13: {
+    generalInfo: "PPKn membahas tentang hak dan kewajiban warga negara, Pancasila, UUD 1945, dan Bhinneka Tunggal Ika.",
+    whoIAm: "",
+    teachingPlan: "",
+    group: "",
+    booksResources: "",
+    assessment: "",
+    declaration: "",
+  },
+};
