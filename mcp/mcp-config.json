@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "oce": {
+      "command": "python",
+      "args": ["C:\\Users\\YOUR_USERNAME\\antigravity-mcp\\server.py"],
+      "env": {
+        "VPS_PASSWORD": "c0VI4HvBzjp4hZ491F5pv9a1",
+        "OCE_WEBHOOK": "http://217.216.109.145:8644/webhooks/oce-task",
+        "HERMES_WEBHOOK": "http://217.216.109.145:8644/webhooks/hermes-task",
+        "GATEWAY_URL": "http://217.216.109.145:18789"
+      }
+    }
+  }
+}
