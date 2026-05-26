@@ -10,19 +10,19 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [role, setRole] = useState("student");
-  const { user, login, register, logout, updateUser } = useAuth();
+  const { user, loading, login, register, logout, updateUser } = useAuth();
 
-  const handleLogin = useCallback((username, password) => {
-    const result = login(username, password);
+  const handleLogin = useCallback(async (username, password) => {
+    const result = await login(username, password);
     if (result.success) {
-      setRole(result.user.role);
+      setRole(result.user.role || "student");
       setCurrentPage("dashboard");
     }
     return result;
   }, [login]);
 
-  const handleRegister = useCallback((username, password, email) => {
-    const result = register(username, password, email);
+  const handleRegister = useCallback(async (username, password, email) => {
+    const result = await register(username, password, email);
     return result;
   }, [register]);
 
@@ -31,6 +31,18 @@ export default function App() {
     setRole("student");
     setCurrentPage("dashboard");
   };
+
+  // Show loading while auth is being validated
+  if (loading && currentPage !== "login" && currentPage !== "register") {
+    return (
+      <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">⏳</div>
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -68,8 +80,8 @@ export default function App() {
                     onChange={(e) => setRole(e.target.value)}
                     className="bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none"
                   >
-                    <option value="student" className="bg-gray-800">👨‍🎓 Siswa</option>
-                    <option value="lecturer" className="bg-gray-800">👨‍🏫 Pengajar</option>
+                    <option value="student" className="bg-gray-800">👨🎓 Siswa</option>
+                    <option value="lecturer" className="bg-gray-800">👨🏫 Pengajar</option>
                   </select>
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-bold text-sm">
@@ -101,6 +113,7 @@ export default function App() {
           setCurrentPage={setCurrentPage}
           role={role}
           user={user}
+          setRole={setRole}
         />
       )}
 
