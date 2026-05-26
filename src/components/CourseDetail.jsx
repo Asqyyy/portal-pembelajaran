@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { courses, sectionTemplates } from "../data/mockData";
 import { api } from "../api/client";
 import QRAttendance from "./QRAttendance";
-import QuizEngine from "./QuizEngine";
+import QuizTab from "./QuizTab";
 import Forum from "./Forum";
 import CalendarWidget from "./CalendarWidget";
 import Gradebook from "./Gradebook";
@@ -684,7 +684,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
             </div>
           </div>
           <div className="expandable-content open">
-            <QuizEngine courseId={courseId} role={role} />
+            <QuizTab courseId={courseId} role={role} user={user} />
           </div>
         </div>
 

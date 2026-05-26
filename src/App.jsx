@@ -18,13 +18,12 @@ function Footer() {
 export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [role, setRole] = useState("student");
+  const role = user?.role || "student";
   const { user, loading, login, register, logout, updateUser } = useAuth();
 
   const handleLogin = useCallback(async (username, password) => {
     const result = await login(username, password);
     if (result.success) {
-      setRole(result.user.role || "student");
       setCurrentPage("dashboard");
     }
     return result;
@@ -37,7 +36,6 @@ export default function App() {
 
   const handleLogout = () => {
     logout();
-    setRole("student");
     setCurrentPage("dashboard");
   };
 
@@ -64,7 +62,6 @@ export default function App() {
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           role={role}
-          setRole={setRole}
           user={user}
           onLogout={handleLogout}
         />
@@ -76,7 +73,6 @@ export default function App() {
             setCurrentPage={setCurrentPage}
             role={role}
             user={user}
-            setRole={setRole}
             onLogout={handleLogout}
           />
         )}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { api } from "../api/client";
 
 /* ─── helpers ─────────────────────────────── */
 const QUIZZES_KEY = (cid) => `quizzes_${cid}`;
@@ -197,6 +198,8 @@ function QuizTaker({ quiz, courseId, onDone, user }) {
     };
     const all = load(RESULTS_KEY(courseId));
     save(RESULTS_KEY(courseId), [...all, result]);
+    // Sync to API
+    api.submitQuiz(quiz.id, { answers, score, total: mx }).catch(() => {});
     setResult(result); setSubmit(true);
   };
 
@@ -392,13 +395,33 @@ export default function QuizTab({ courseId, role, user }) {
   const [view,    setView]      = useState("list"); // list | builder | taker | grader
   const [editing, setEditing]   = useState(null);
   const [active,  setActive]    = useState(null);   // quiz being taken/graded
+  const [loading, setLoading]   = useState(true);
   const results = load(RESULTS_KEY(courseId));
+
+  // Fetch quizzes from API on mount, fallback to localStorage
+  useEffect(() => {
+    setLoading(true);
+    api.getQuizByCourse(courseId)
+      .then((data) => {
+        const fetched = Array.isArray(data) ? data : (data.quizzes || []);
+        if (fetched.length > 0) {
+          setQuizzes(fetched);
+          save(QUIZZES_KEY(courseId), fetched);
+        }
+      })
+      .catch(() => {
+        // API unavailable — localStorage already loaded via useState init
+      })
+      .finally(() => setLoading(false));
+  }, [courseId]);
 
   const saveQuiz = (quiz) => {
     const all = quizzes.find((q) => q.id === quiz.id)
       ? quizzes.map((q) => (q.id === quiz.id ? quiz : q))
       : [...quizzes, quiz];
     setQuizzes(all); save(QUIZZES_KEY(courseId), all); setView("list");
+    // Sync to API
+    api.createQuiz({ ...quiz, courseId }).catch(() => {});
   };
 
   const deleteQuiz = (id) => {
@@ -431,6 +454,13 @@ export default function QuizTab({ courseId, role, user }) {
   );
 
   const visibleQuizzes = role === "lecturer" ? quizzes : quizzes.filter((q) => q.published);
+
+  if (loading) return (
+    <div className="quiz-tab" style={{textAlign:'center',padding:'3rem 0'}}>
+      <div style={{width:40,height:40,border:'4px solid #e2e8f0',borderTopColor:'#667eea',borderRadius:'50%',animation:'spin 1s linear infinite',margin:'0 auto 1rem'}} />
+      <p style={{color:'#94a3b8',fontSize:'0.9rem'}}>Memuat kuis...</p>
+    </div>
+  );
 
   return (
     <div className="quiz-tab">

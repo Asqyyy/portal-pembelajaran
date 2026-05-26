@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOICEREALTIME - WebSocket API</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f172a;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: #1e293b;
+            padding: 3rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+        h1 {
+            background: linear-gradient(to right, #a855f7, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        p.subtitle {
+            color: #94a3b8;
+            margin-bottom: 2rem;
+            line-height: 1.5;
+        }
+        .status {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: bold;
+            margin-bottom: 2rem;
+            background: #334155;
+            color: #cbd5e1;
+        }
+        .status.connected {
+            background: #166534;
+            color: #4ade80;
+        }
+        .status.error {
+            background: #7f1d1d;
+            color: #f87171;
+        }
+        button {
+            background: linear-gradient(to right, #3b82f6, #8b5cf6);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.125rem;
+            font-weight: bold;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 0 auto;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 25px -5px rgba(59, 130, 246, 0.4);
+        }
+        #transcript {
+            margin-top: 2rem;
+            text-align: left;
+            background: #0f172a;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            height: 150px;
+            overflow-y: auto;
+            font-size: 0.9rem;
+            color: #cbd5e1;
+            border: 1px solid #334155;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>VOICEREALTIME</h1>
+        <p class="subtitle">Live Voice Call menggunakan GPT-4o Realtime API (WebSocket)</p>
+        
+        <div id="statusIndicator" class="status">Disconnected</div>
+
+        <button id="callButton">
+            <span id="btnIcon">📞</span>
+            <span id="btnText">Mulai Panggilan</span>
+        </button>
+
+        <div id="transcript"></div>
+    </div>
+
+    <script>
+        const API_KEY = "sk-rBc02WN1PaW0TCmms94OipJqkeXqjwC9bPhMEY5ndGiWzVGS";
+        const WS_URL = "wss://ccapi.us/v1/realtime?model=gpt-4o-realtime-preview";
+
+        const callButton = document.getElementById("callButton");
+        const btnText = document.getElementById("btnText");
+        const btnIcon = document.getElementById("btnIcon");
+        const statusIndicator = document.getElementById("statusIndicator");
+        const transcriptDiv = document.getElementById("transcript");
+
+        let ws = null;
+        let audioContext = null;
+        let microphone = null;
+        let processor = null;
+        let nextPlayTime = 0;
+
+        // Base64 helper
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            let bytes = new Uint8Array(buffer);
+            let len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            let binary_string = window.atob(base64);
+            let len = binary_string.length;
+            let bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary_string.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        async function startCall() {
+            try {
+                updateStatus("Requesting Microphone...", "");
+                transcriptDiv.innerHTML = "";
+                
+                // Audio Context Setup safely
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                try {
+                    audioContext = new AudioContextClass({ sampleRate: 24000 });
+                } catch (e) {
+                    console.warn("Failed to set sampleRate to 24000, using default", e);
+                    audioContext = new AudioContextClass();
+                }
+                nextPlayTime = audioContext.currentTime;
+
+                // 1. Get Microphone FIRST to avoid race conditions
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+                } catch (err) {
+                    updateStatus("Mic Error: " + err.message, "error");
+                    return;
+                }
+
+                microphone = audioContext.createMediaStreamSource(stream);
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                updateStatus("Connecting WebSocket...", "");
+
+                // 2. Connect WebSocket
+                ws = new WebSocket(WS_URL, [
+                    "realtime",
+                    "openai-insecure-api-key." + API_KEY,
+                    "openai-beta.realtime-v1"
+                ]);
+
+                ws.onopen = async () => {
+                    updateStatus("Connected! Silakan bicara.", "connected");
+                    btnText.textContent = "Akhiri Panggilan";
+                    btnIcon.textContent = "🛑";
+                    callButton.style.background = "linear-gradient(to right, #ef4444, #b91c1c)";
+
+                    // Configure session
+                    ws.send(JSON.stringify({
+                        type: "session.update",
+                        session: {
+                            turn_detection: { type: "server_vad" }
+                        }
+                    }));
+
+                    processor.onaudioprocess = (e) => {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            const inputData = e.inputBuffer.getChannelData(0);
+                            const inputSampleRate = audioContext.sampleRate;
+                            const targetSampleRate = 24000;
+                            
+                            // Resample by picking nearest neighbor (simple decimation)
+                            const ratio = inputSampleRate / targetSampleRate;
+                            const outLength = Math.floor(inputData.length / ratio);
+                            const pcm16 = new Int16Array(outLength);
+                            
+                            for (let i = 0; i < outLength; i++) {
+                                let s = inputData[Math.floor(i * ratio)];
+                                s = Math.max(-1, Math.min(1, s));
+                                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                            }
+                            
+                            ws.send(JSON.stringify({
+                                type: "input_audio_buffer.append",
+                                audio: arrayBufferToBase64(pcm16.buffer)
+                            }));
+                        }
+                    };
+
+                    microphone.connect(processor);
+                    processor.connect(audioContext.destination);
+                };
+
+                ws.onmessage = (event) => {
+                    const msg = JSON.parse(event.data);
+                    
+                    if (msg.type === "response.audio.delta" && msg.delta) {
+                        const pcm16Buffer = base64ToArrayBuffer(msg.delta);
+                        const pcm16 = new Int16Array(pcm16Buffer);
+                        const float32 = new Float32Array(pcm16.length);
+                        for (let i = 0; i < pcm16.length; i++) {
+                            float32[i] = pcm16[i] / 32768.0;
+                        }
+                        
+                        const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
+                        audioBuffer.getChannelData(0).set(float32);
+                        
+                        const source = audioContext.createBufferSource();
+                        source.buffer = audioBuffer;
+                        source.connect(audioContext.destination);
+                        
+                        let playTime = Math.max(audioContext.currentTime, nextPlayTime);
+                        source.start(playTime);
+                        nextPlayTime = playTime + audioBuffer.duration;
+                    }
+                    else if (msg.type === "response.audio_transcript.delta") {
+                        transcriptDiv.innerHTML += msg.delta;
+                        transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+                    }
+                    else if (msg.type === "response.audio_transcript.done") {
+                        transcriptDiv.innerHTML += "<br><br>";
+                    }
+                    else if (msg.type === "error") {
+                        console.error("API Error:", msg);
+                        updateStatus("API Error: " + msg.error.message, "error");
+                    }
+                };
+
+                ws.onclose = (event) => {
+                    console.log("WebSocket closed", event.code, event.reason);
+                    if (event.code !== 1000 && event.code !== 1005) {
+                        updateStatus(`WS Closed: ${event.code} ${event.reason || "Koneksi ditolak server API"}`, "error");
+                        stopCall(false);
+                    } else {
+                        stopCall(true);
+                    }
+                };
+
+            } catch (error) {
+                console.error(error);
+                updateStatus("Error: " + error.message, "error");
+                stopCall(false);
+            }
+        }
+
+        function stopCall(resetStatus = true) {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            if (processor) {
+                processor.disconnect();
+                processor = null;
+            }
+            if (microphone) {
+                microphone.disconnect();
+                microphone = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            if (resetStatus) {
+                updateStatus("Disconnected", "");
+            }
+            btnText.textContent = "Mulai Panggilan";
+            btnIcon.textContent = "📞";
+            callButton.style.background = "linear-gradient(to right, #3b82f6, #8b5cf6)";
+            callButton.disabled = false;
+        }
+
+        function updateStatus(text, className) {
+            statusIndicator.textContent = text;
+            statusIndicator.className = "status " + className;
+        }
+
+        callButton.addEventListener("click", () => {
+            if (ws) {
+                stopCall(true);
+            } else {
+                callButton.disabled = true;
+                btnText.textContent = "Menghubungkan...";
+                startCall().finally(() => {
+                    callButton.disabled = false;
+                });
+            }
+        });
+    </script>
+</body>
+</html>
