@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 // Helper: get token from localStorage (satu2nya yg tersisa)
 const token = () => localStorage.getItem('ppToken');
