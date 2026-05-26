@@ -81,13 +81,13 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role, us
   const displayedCourses = enrolledCourses.filter((c) => c.category === activeTab);
 
   return (
-    <div className="min-h-screen bg-[#f0f4f8]">
+    <div className="min-h-screen bg-[#f0f4f8] page-enter">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white py-10 px-6">
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white py-8 sm:py-10 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h2 className="text-3xl font-bold">📚 Kursus Saya</h2>
-            <p className="text-white/70 mt-2">
+            <h2 className="text-2xl sm:text-3xl font-bold">📚 Kursus Saya</h2>
+            <p className="text-white/70 mt-2 text-sm sm:text-base">
               {activeTab === "learning"
                 ? "Mata pelajaran yang sedang kamu pelajari"
                 : "Mata pelajaran yang kamu ajar"}
@@ -100,24 +100,26 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role, us
               setEnrollCode("");
               setShowEnrollModal(true);
             }}
-            className="px-6 py-3 bg-white text-purple-700 rounded-xl font-semibold hover:bg-white/90 transition-all flex items-center gap-2 shadow-lg"
+            className="px-5 sm:px-6 py-3 bg-white text-purple-700 rounded-xl font-semibold hover:bg-white/90 hover:-translate-y-0.5 transition-all flex items-center gap-2 shadow-lg"
           >
             <span>➕</span> Enroll Kursus
           </button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 -mt-6">
-        {/* Loading / Error */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 -mt-6">
+        {/* Loading */}
         {loading && (
           <div className="content-card text-center py-16">
-            <div className="text-4xl mb-4">⏳</div>
-            <p className="text-gray-500">Loading...</p>
+            <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-gray-500 font-medium">Memuat kursus...</p>
           </div>
         )}
-        {error && (
-          <div className="bg-yellow-50 text-yellow-700 px-4 py-3 rounded-xl text-sm mb-4">
-            ⚠️ {error}
+
+        {/* Error */}
+        {error && !loading && (
+          <div className="bg-yellow-50 border border-yellow-100 text-yellow-700 px-4 py-3 rounded-xl text-sm mb-4 flex items-center gap-2">
+            <span>⚠️</span> {error}
           </div>
         )}
 
@@ -127,7 +129,7 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role, us
             <div className="bg-white rounded-xl shadow-sm flex mb-8 overflow-hidden">
               <button
                 onClick={() => setActiveTab("learning")}
-                className={'tab flex-1 text-center py-4 ' + (activeTab === "learning" ? "active" : "")}
+                className={'tab flex-1 text-center py-4 text-sm sm:text-base ' + (activeTab === "learning" ? "active" : "")}
               >
                 <span className="text-lg mr-2">📖</span>
                 Sedang Dipelajari
@@ -137,7 +139,7 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role, us
               </button>
               <button
                 onClick={() => setActiveTab("teaching")}
-                className={'tab flex-1 text-center py-4 ' + (activeTab === "teaching" ? "active" : "")}
+                className={'tab flex-1 text-center py-4 text-sm sm:text-base ' + (activeTab === "teaching" ? "active" : "")}
               >
                 <span className="text-lg mr-2">🎓</span>
                 Sedang Diajar
@@ -147,7 +149,7 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role, us
               </button>
             </div>
 
-            {/* Table */}
+            {/* Empty state */}
             {displayedCourses.length === 0 ? (
               <div className="content-card text-center py-16">
                 <div className="text-6xl mb-4">📭</div>
@@ -159,12 +161,13 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role, us
                 </p>
                 <button
                   onClick={() => { setShowEnrollModal(true); setEnrollCode(""); }}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+                  className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl font-semibold hover:shadow-lg hover:-translate-y-0.5 transition-all"
                 >
                   ➕ Enroll Kursus
                 </button>
               </div>
             ) : (
+              /* Table */
               <div className="content-card overflow-x-auto">
                 <table className="course-table">
                   <thead>
@@ -238,7 +241,7 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role, us
               </p>
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Kode Mata Pelajaran
                 </label>
                 <input
@@ -247,26 +250,26 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role, us
                   onChange={(e) => setEnrollCode(e.target.value.toUpperCase())}
                   onKeyDown={(e) => e.key === "Enter" && handleEnroll()}
                   placeholder="Contoh: MAT-XII"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-lg font-mono text-center tracking-widest focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-lg font-mono text-center tracking-widest focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all"
                   autoFocus
                 />
               </div>
 
               {enrollError && (
-                <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm mb-4">
-                  ❌ {enrollError}
+                <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm mb-4 flex items-center gap-2">
+                  <span>❌</span> {enrollError}
                 </div>
               )}
               {enrollSuccess && (
-                <div className="bg-green-50 text-green-600 px-4 py-3 rounded-xl text-sm mb-4">
-                  ✅ {enrollSuccess}
+                <div className="bg-green-50 border border-green-100 text-green-600 px-4 py-3 rounded-xl text-sm mb-4 flex items-center gap-2">
+                  <span>✅</span> {enrollSuccess}
                 </div>
               )}
 
               <div className="flex gap-3">
                 <button
                   onClick={handleEnroll}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl font-semibold hover:shadow-lg hover:-translate-y-0.5 transition-all"
                 >
                   Daftar Sekarang
                 </button>
