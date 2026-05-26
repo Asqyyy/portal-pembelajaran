@@ -22,7 +22,8 @@ export default function App() {
   }, [login]);
 
   const handleRegister = useCallback((username, password, email) => {
-    return register(username, password, email);
+    const result = register(username, password, email);
+    return result;
   }, [register]);
 
   const handleLogout = () => {
@@ -31,89 +32,75 @@ export default function App() {
     setCurrentPage("dashboard");
   };
 
-  // Shared secondary navbar for non-dashboard, non-auth pages
-  const SecondaryNav = () => (
-    <div className="sticky top-0 z-50">
-      <nav className="secondary-nav">
-        <button
-          onClick={() => setCurrentPage("dashboard")}
-          className="secondary-nav-logo"
-          id="sec-nav-logo"
-        >
-          <span className="secondary-nav-logo-icon">🎓</span>
-          <span className="secondary-nav-logo-text">
-            Portal<span className="text-purple-600">Pembelajaran</span>
-          </span>
-        </button>
-
-        <div className="secondary-nav-links">
-          <button
-            onClick={() => setCurrentPage("dashboard")}
-            className={`secondary-nav-link ${currentPage === "dashboard" ? "secondary-nav-link-active" : ""}`}
-            id="sec-nav-home"
-          >
-            🏠 Beranda
-          </button>
-          <button
-            onClick={() => setCurrentPage("courses")}
-            className={`secondary-nav-link ${currentPage === "courses" || currentPage === "courseDetail" ? "secondary-nav-link-active" : ""}`}
-            id="sec-nav-courses"
-          >
-            📚 Kursus Saya
-          </button>
-        </div>
-
-        <div className="secondary-nav-right">
-          {user ? (
-            <>
-              <div className="secondary-role-badge">
-                <span>{role === "lecturer" ? "👨‍🏫" : "👨‍🎓"}</span>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="secondary-role-select"
-                  id="sec-role-select"
-                >
-                  <option value="student">Siswa</option>
-                  <option value="lecturer">Pengajar</option>
-                </select>
-              </div>
-              <div className="secondary-user-group">
-                <div className="secondary-avatar">{user.username.charAt(0).toUpperCase()}</div>
-                <span className="secondary-username">{user.username}</span>
-                <button onClick={handleLogout} className="secondary-logout-btn" id="sec-logout-btn">
-                  Keluar
-                </button>
-              </div>
-            </>
-          ) : (
-            <button
-              onClick={() => setCurrentPage("login")}
-              className="secondary-login-btn"
-              id="sec-login-btn"
-            >
-              🔐 Masuk
-            </button>
-          )}
-        </div>
-      </nav>
-    </div>
-  );
-
   return (
     <div className="min-h-screen">
-      {/* Show secondary nav only on inner pages */}
+      {/* Inner navbar for non-dashboard, non-auth pages */}
       {currentPage !== "dashboard" && currentPage !== "login" && currentPage !== "register" && (
-        <SecondaryNav />
+        <div className="sticky top-0 z-50">
+          <nav className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-3 flex items-center justify-between shadow-lg">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCurrentPage("dashboard")}
+                className="text-white/80 hover:text-white text-sm flex items-center gap-1 transition-colors"
+              >
+                <span className="text-xl">🎓</span>
+                <span className="font-bold">PortalPembelajaran</span>
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCurrentPage("dashboard")}
+                className="px-4 py-1.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-all"
+              >
+                🏠 Beranda
+              </button>
+              <button
+                onClick={() => setCurrentPage("courses")}
+                className="px-4 py-1.5 rounded-lg text-sm bg-white/20 text-white transition-all"
+              >
+                📚 Kursus Saya
+              </button>
+
+              {user ? (
+                <>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    className="bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none"
+                  >
+                    <option value="student" className="bg-gray-800">👨‍🎓 Siswa</option>
+                    <option value="lecturer" className="bg-gray-800">👨‍🏫 Pengajar</option>
+                  </select>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-bold text-sm">
+                      {user.username.charAt(0).toUpperCase()}
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="text-xs text-white/50 hover:text-white/80 transition-colors"
+                    >
+                      Keluar
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={() => setCurrentPage("login")}
+                  className="px-4 py-1.5 bg-white/10 text-white rounded-lg text-sm hover:bg-white/20 transition-all flex items-center gap-1"
+                >
+                  <span>🔐</span> Masuk
+                </button>
+              )}
+            </div>
+          </nav>
+        </div>
       )}
 
       {currentPage === "dashboard" && (
         <Dashboard
           setCurrentPage={setCurrentPage}
           role={role}
-          setRole={setRole}
           user={user}
-          onLogout={handleLogout}
         />
       )}
 
@@ -127,7 +114,9 @@ export default function App() {
       {currentPage === "register" && (
         <Register
           onRegister={handleRegister}
-          onSwitchToLogin={() => setCurrentPage("login")}
+          onSwitchToLogin={(username) => {
+            setCurrentPage("login");
+          }}
         />
       )}
 
