@@ -1,4 +1,4 @@
-export default function Dashboard({ setCurrentPage, role, user }) {
+export default function Dashboard({ setCurrentPage, role, user, setRole }) {
   const icons = ["📐", "🔬", "📖", "💡", "🧬", "🌍", "🧮", "🎯", "📏", "⚛️", "📚", "🏛️"];
 
   return (
@@ -41,7 +41,7 @@ export default function Dashboard({ setCurrentPage, role, user }) {
             {user ? (
               <select
                 value={role}
-                onChange={(e) => {}}
+                onChange={(e) => setRole(e.target.value)}
                 className="bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-2 focus:outline-none"
               >
                 <option value="student" className="bg-gray-800 text-white">👨‍🎓 Siswa</option>

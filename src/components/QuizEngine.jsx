@@ -91,7 +91,8 @@ export default function QuizEngine({ courseId, role }) {
     let score = 0;
     let total = 0;
     const answers = {};
-    activeQuiz.questions.forEach((q) => {
+    const questions = activeQuiz.questions;
+    questions.forEach((q) => {
       total += q.points;
       const userAns = (userAnswers[q.id] || "").toString().trim().toLowerCase();
       const correctAns = (q.correctAnswer || "").toString().trim().toLowerCase();
@@ -102,7 +103,7 @@ export default function QuizEngine({ courseId, role }) {
       }
       // Essay is manually graded — give 0 for now
     });
-    setQuizResult({ score, total, answers });
+    setQuizResult({ score, total, answers, questions, quizTitle: activeQuiz.title });
     saveResult(activeQuiz.id, score, total, answers);
     setActiveQuiz(null);
   };
@@ -269,7 +270,7 @@ export default function QuizEngine({ courseId, role }) {
         {/* Answer review */}
         <div className="space-y-3">
           {Object.entries(quizResult.answers).map(([qId, ans], i) => {
-            const q = activeQuiz?.questions?.find(q => q.id === Number(qId));
+            const q = quizResult.questions?.find(q => q.id === Number(qId));
             if (!q) return null;
             const isCorrect = ans.user === ans.correct;
             return (
