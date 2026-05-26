@@ -5,6 +5,15 @@ import CourseList from "./components/CourseList";
 import CourseDetail from "./components/CourseDetail";
 import Login from "./components/Login";
 import Register from "./components/Register";
+import Navbar from "./components/Navbar";
+
+function Footer() {
+  return (
+    <footer className="app-footer">
+      <p>&copy; 2026 Portal Pembelajaran. Platform belajar online untuk madrasah & sekolah.</p>
+    </footer>
+  );
+}
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
@@ -35,122 +44,81 @@ export default function App() {
   // Show loading while auth is being validated
   if (loading && currentPage !== "login" && currentPage !== "register") {
     return (
-      <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="text-4xl mb-4">⏳</div>
-          <p className="text-gray-500">Loading...</p>
+          <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-500 font-medium">Memuat aplikasi...</p>
         </div>
       </div>
     );
   }
 
+  const showNav = currentPage !== "dashboard" && currentPage !== "login" && currentPage !== "register";
+  const isDashboard = currentPage === "dashboard";
+
   return (
-    <div className="min-h-screen">
-      {/* Inner navbar for non-dashboard, non-auth pages */}
-      {currentPage !== "dashboard" && currentPage !== "login" && currentPage !== "register" && (
-        <div className="sticky top-0 z-50">
-          <nav className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-3 flex items-center justify-between shadow-lg">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setCurrentPage("dashboard")}
-                className="text-white/80 hover:text-white text-sm flex items-center gap-1 transition-colors"
-              >
-                <span className="text-xl">🎓</span>
-                <span className="font-bold">PortalPembelajaran</span>
-              </button>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setCurrentPage("dashboard")}
-                className="px-4 py-1.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-all"
-              >
-                🏠 Beranda
-              </button>
-              <button
-                onClick={() => setCurrentPage("courses")}
-                className="px-4 py-1.5 rounded-lg text-sm bg-white/20 text-white transition-all"
-              >
-                📚 Kursus Saya
-              </button>
-
-              {user ? (
-                <>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none"
-                  >
-                    <option value="student" className="bg-gray-800">👨🎓 Siswa</option>
-                    <option value="lecturer" className="bg-gray-800">👨🏫 Pengajar</option>
-                  </select>
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-bold text-sm">
-                      {user.username.charAt(0).toUpperCase()}
-                    </div>
-                    <button
-                      onClick={handleLogout}
-                      className="text-xs text-white/50 hover:text-white/80 transition-colors"
-                    >
-                      Keluar
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <button
-                  onClick={() => setCurrentPage("login")}
-                  className="px-4 py-1.5 bg-white/10 text-white rounded-lg text-sm hover:bg-white/20 transition-all flex items-center gap-1"
-                >
-                  <span>🔐</span> Masuk
-                </button>
-              )}
-            </div>
-          </nav>
-        </div>
-      )}
-
-      {currentPage === "dashboard" && (
-        <Dashboard
+    <div className={isDashboard ? "min-h-screen" : "min-h-screen flex flex-col"}>
+      {/* Navbar for non-dashboard / non-auth pages */}
+      {showNav && (
+        <Navbar
+          currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           role={role}
-          user={user}
           setRole={setRole}
-        />
-      )}
-
-      {currentPage === "login" && (
-        <Login
-          onLogin={handleLogin}
-          onSwitchToRegister={() => setCurrentPage("register")}
-        />
-      )}
-
-      {currentPage === "register" && (
-        <Register
-          onRegister={handleRegister}
-          onSwitchToLogin={(username) => {
-            setCurrentPage("login");
-          }}
-        />
-      )}
-
-      {currentPage === "courses" && (
-        <CourseList
-          setCurrentPage={setCurrentPage}
-          setSelectedCourse={setSelectedCourse}
-          role={role}
           user={user}
+          onLogout={handleLogout}
         />
       )}
 
-      {currentPage === "courseDetail" && selectedCourse && (
-        <CourseDetail
-          courseId={selectedCourse.id}
-          courseCode={selectedCourse.courseCode}
-          setCurrentPage={setCurrentPage}
-          role={role}
-          user={user}
-        />
-      )}
+      <div className={isDashboard ? "" : "flex-1 page-enter"}>
+        {currentPage === "dashboard" && (
+          <Dashboard
+            setCurrentPage={setCurrentPage}
+            role={role}
+            user={user}
+            setRole={setRole}
+            onLogout={handleLogout}
+          />
+        )}
+
+        {currentPage === "login" && (
+          <Login
+            onLogin={handleLogin}
+            onSwitchToRegister={() => setCurrentPage("register")}
+          />
+        )}
+
+        {currentPage === "register" && (
+          <Register
+            onRegister={handleRegister}
+            onSwitchToLogin={(username) => {
+              setCurrentPage("login");
+            }}
+          />
+        )}
+
+        {currentPage === "courses" && (
+          <CourseList
+            setCurrentPage={setCurrentPage}
+            setSelectedCourse={setSelectedCourse}
+            role={role}
+            user={user}
+          />
+        )}
+
+        {currentPage === "courseDetail" && selectedCourse && (
+          <CourseDetail
+            courseId={selectedCourse.id}
+            courseCode={selectedCourse.courseCode}
+            setCurrentPage={setCurrentPage}
+            role={role}
+            user={user}
+          />
+        )}
+      </div>
+
+      {/* Footer — show on all pages */}
+      <Footer />
     </div>
   );
 }
