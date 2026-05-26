@@ -223,7 +223,8 @@ export default function Gradebook({ courseId, role }) {
               {students.sort().map(name => {
                 const final = calculateFinalGrade(name);
                 const letter = getLetterGrade(final);
-                const letterColor = letter === "A" ? "text-green-600" : letter.startsWith("B") ? "text-blue-600" : letter.startsWith("C") ? "text-amber-600" : letter === "D" ? "text-orange-600" : letter === "E" ? "text-red-600" : "text-gray-400";
+                const gradeColor = { "A": "text-green-600", "B+": "text-blue-600", "B": "text-blue-600", "C+": "text-amber-600", "C": "text-amber-600", "D": "text-orange-600", "E": "text-red-600" };
+                const letterColor = gradeColor[letter] || "text-gray-400";
                 return (
                   <tr key={name}>
                     <td className="sticky left-0 bg-white font-medium text-gray-700">{name}</td>
