@@ -5,24 +5,34 @@ import CourseList from "./components/CourseList";
 import CourseDetail from "./components/CourseDetail";
 import Login from "./components/Login";
 import Register from "./components/Register";
+import Navbar from "./components/Navbar";
+
+function Footer() {
+  return (
+    <footer className="app-footer">
+      <p>&copy; 2026 Portal Pembelajaran. Platform belajar online untuk madrasah & sekolah.</p>
+    </footer>
+  );
+}
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [role, setRole] = useState("student");
-  const { user, login, register, logout, updateUser } = useAuth();
+  const { user, loading, login, register, logout, updateUser } = useAuth();
 
-  const handleLogin = useCallback((username, password) => {
-    const result = login(username, password);
+  const handleLogin = useCallback(async (username, password) => {
+    const result = await login(username, password);
     if (result.success) {
-      setRole(result.user.role);
+      setRole(result.user.role || "student");
       setCurrentPage("dashboard");
     }
     return result;
   }, [login]);
 
-  const handleRegister = useCallback((username, password, email) => {
-    return register(username, password, email);
+  const handleRegister = useCallback(async (username, password, email) => {
+    const result = await register(username, password, email);
+    return result;
   }, [register]);
 
   const handleLogout = () => {
@@ -31,84 +41,27 @@ export default function App() {
     setCurrentPage("dashboard");
   };
 
-  // Shared secondary navbar for non-dashboard, non-auth pages
-  const SecondaryNav = () => (
-    <div className="sticky top-0 z-50">
-      <nav className="secondary-nav">
-        <button
-          onClick={() => setCurrentPage("dashboard")}
-          className="secondary-nav-logo"
-          id="sec-nav-logo"
-        >
-          <span className="secondary-nav-logo-icon">🎓</span>
-          <span className="secondary-nav-logo-text">
-            Portal<span className="text-purple-600">Pembelajaran</span>
-          </span>
-        </button>
-
-        <div className="secondary-nav-links">
-          <button
-            onClick={() => setCurrentPage("dashboard")}
-            className={`secondary-nav-link ${currentPage === "dashboard" ? "secondary-nav-link-active" : ""}`}
-            id="sec-nav-home"
-          >
-            🏠 Beranda
-          </button>
-          <button
-            onClick={() => setCurrentPage("courses")}
-            className={`secondary-nav-link ${currentPage === "courses" || currentPage === "courseDetail" ? "secondary-nav-link-active" : ""}`}
-            id="sec-nav-courses"
-          >
-            📚 Kursus Saya
-          </button>
+  // Show loading while auth is being validated
+  if (loading && currentPage !== "login" && currentPage !== "register") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-500 font-medium">Memuat aplikasi...</p>
         </div>
+      </div>
+    );
+  }
 
-        <div className="secondary-nav-right">
-          {user ? (
-            <>
-              <div className="secondary-role-badge">
-                <span>{role === "lecturer" ? "👨‍🏫" : "👨‍🎓"}</span>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="secondary-role-select"
-                  id="sec-role-select"
-                >
-                  <option value="student">Siswa</option>
-                  <option value="lecturer">Pengajar</option>
-                </select>
-              </div>
-              <div className="secondary-user-group">
-                <div className="secondary-avatar">{user.username.charAt(0).toUpperCase()}</div>
-                <span className="secondary-username">{user.username}</span>
-                <button onClick={handleLogout} className="secondary-logout-btn" id="sec-logout-btn">
-                  Keluar
-                </button>
-              </div>
-            </>
-          ) : (
-            <button
-              onClick={() => setCurrentPage("login")}
-              className="secondary-login-btn"
-              id="sec-login-btn"
-            >
-              🔐 Masuk
-            </button>
-          )}
-        </div>
-      </nav>
-    </div>
-  );
+  const showNav = currentPage !== "dashboard" && currentPage !== "login" && currentPage !== "register";
+  const isDashboard = currentPage === "dashboard";
 
   return (
-    <div className="min-h-screen">
-      {/* Show secondary nav only on inner pages */}
-      {currentPage !== "dashboard" && currentPage !== "login" && currentPage !== "register" && (
-        <SecondaryNav />
-      )}
-
-      {currentPage === "dashboard" && (
-        <Dashboard
+    <div className={isDashboard ? "min-h-screen" : "min-h-screen flex flex-col"}>
+      {/* Navbar for non-dashboard / non-auth pages */}
+      {showNav && (
+        <Navbar
+          currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           role={role}
           setRole={setRole}
@@ -117,38 +70,55 @@ export default function App() {
         />
       )}
 
-      {currentPage === "login" && (
-        <Login
-          onLogin={handleLogin}
-          onSwitchToRegister={() => setCurrentPage("register")}
-        />
-      )}
+      <div className={isDashboard ? "" : "flex-1 page-enter"}>
+        {currentPage === "dashboard" && (
+          <Dashboard
+            setCurrentPage={setCurrentPage}
+            role={role}
+            user={user}
+            setRole={setRole}
+            onLogout={handleLogout}
+          />
+        )}
 
-      {currentPage === "register" && (
-        <Register
-          onRegister={handleRegister}
-          onSwitchToLogin={() => setCurrentPage("login")}
-        />
-      )}
+        {currentPage === "login" && (
+          <Login
+            onLogin={handleLogin}
+            onSwitchToRegister={() => setCurrentPage("register")}
+          />
+        )}
 
-      {currentPage === "courses" && (
-        <CourseList
-          setCurrentPage={setCurrentPage}
-          setSelectedCourse={setSelectedCourse}
-          role={role}
-          user={user}
-        />
-      )}
+        {currentPage === "register" && (
+          <Register
+            onRegister={handleRegister}
+            onSwitchToLogin={(username) => {
+              setCurrentPage("login");
+            }}
+          />
+        )}
 
-      {currentPage === "courseDetail" && selectedCourse && (
-        <CourseDetail
-          courseId={selectedCourse.id}
-          courseCode={selectedCourse.courseCode}
-          setCurrentPage={setCurrentPage}
-          role={role}
-          user={user}
-        />
-      )}
+        {currentPage === "courses" && (
+          <CourseList
+            setCurrentPage={setCurrentPage}
+            setSelectedCourse={setSelectedCourse}
+            role={role}
+            user={user}
+          />
+        )}
+
+        {currentPage === "courseDetail" && selectedCourse && (
+          <CourseDetail
+            courseId={selectedCourse.id}
+            courseCode={selectedCourse.courseCode}
+            setCurrentPage={setCurrentPage}
+            role={role}
+            user={user}
+          />
+        )}
+      </div>
+
+      {/* Footer — show on all pages */}
+      <Footer />
     </div>
   );
 }
