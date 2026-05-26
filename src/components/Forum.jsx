@@ -1,56 +1,94 @@
 import { useState, useEffect } from "react";
+import { api } from "../api/client";
 
 export default function Forum({ courseId, role }) {
-  const [threads, setThreads] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(`forum_${courseId}`) || "[]"); }
-    catch { return []; }
-  });
+  const [threads, setThreads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showNewThread, setShowNewThread] = useState(false);
   const [activeThread, setActiveThread] = useState(null);
   const [newThread, setNewThread] = useState({ title: "", content: "", isAnnouncement: false });
   const [replyContent, setReplyContent] = useState("");
 
+  // Load threads from API
   useEffect(() => {
-    localStorage.setItem(`forum_${courseId}`, JSON.stringify(threads));
+    setLoading(true);
+    setError("");
+    api.getForumThreads(courseId)
+      .then((data) => {
+        setThreads(Array.isArray(data) ? data : (data.threads || []));
+      })
+      .catch(() => {
+        setError("Gagal memuat forum.");
+        // Fallback to localStorage
+        try {
+          const cached = JSON.parse(localStorage.getItem('forum_' + courseId) || "[]");
+          if (cached.length > 0) setThreads(cached);
+        } catch {}
+      })
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  // Cache in localStorage
+  useEffect(() => {
+    if (threads.length > 0) {
+      localStorage.setItem('forum_' + courseId, JSON.stringify(threads));
+    }
   }, [threads, courseId]);
 
-  const createThread = () => {
+  const createThread = async () => {
     if (!newThread.title.trim() || !newThread.content.trim()) return;
-    const thread = {
-      id: Date.now(),
-      ...newThread,
+    const threadData = {
+      courseId,
+      title: newThread.title,
+      content: newThread.content,
+      isAnnouncement: newThread.isAnnouncement,
       author: role === "lecturer" ? "Pengajar" : "Siswa",
       role: role,
-      createdAt: new Date().toLocaleString("id-ID"),
-      replies: [],
-      pinned: newThread.isAnnouncement,
-      isAnnouncement: newThread.isAnnouncement,
     };
-    setThreads(prev => [thread, ...prev]);
+
+    try {
+      const saved = await api.createThread(threadData);
+      setThreads(prev => [{ ...saved, id: saved.id || Date.now(), createdAt: new Date().toLocaleString("id-ID"), replies: saved.replies || [] }, ...prev]);
+    } catch {
+      // Fallback
+      const thread = {
+        id: Date.now(),
+        ...threadData,
+        createdAt: new Date().toLocaleString("id-ID"),
+        replies: [],
+        pinned: newThread.isAnnouncement,
+      };
+      setThreads(prev => [thread, ...prev]);
+    }
     setNewThread({ title: "", content: "", isAnnouncement: false });
     setShowNewThread(false);
   };
 
-  const addReply = (threadId) => {
+  const addReply = async (threadId) => {
     if (!replyContent.trim()) return;
+    const replyData = {
+      id: Date.now(),
+      content: replyContent,
+      author: role === "lecturer" ? "Pengajar" : "Siswa",
+      role: role,
+      createdAt: new Date().toLocaleString("id-ID"),
+      isVerified: false,
+    };
+
     setThreads(prev => prev.map(t => {
       if (t.id !== threadId) return t;
-      return {
-        ...t,
-        replies: [...t.replies, {
-          id: Date.now(),
-          content: replyContent,
-          author: role === "lecturer" ? "Pengajar" : "Siswa",
-          role: role,
-          createdAt: new Date().toLocaleString("id-ID"),
-          isVerified: false,
-        }]
-      };
+      return { ...t, replies: [...t.replies, replyData] };
     }));
     setReplyContent("");
+
+    // Try API
+    try {
+      await api.replyThread(threadId, replyContent);
+    } catch {}
   };
 
-  const markVerified = (threadId, replyId) => {
+  const markVerified = async (threadId, replyId) => {
     setThreads(prev => prev.map(t => {
       if (t.id !== threadId) return t;
       return {
@@ -58,6 +96,7 @@ export default function Forum({ courseId, role }) {
         replies: t.replies.map(r => r.id === replyId ? { ...r, isVerified: true } : r)
       };
     }));
+    try { await api.verifyReply(replyId); } catch {}
   };
 
   const deleteThread = (threadId) => {
@@ -71,12 +110,20 @@ export default function Forum({ courseId, role }) {
     }));
   };
 
+  if (loading) {
+    return <div className="text-center py-12"><span className="text-gray-400">Loading forum...</span></div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-12"><span className="text-red-400">Error: {error}</span></div>;
+  }
+
   // Thread Detail View
   if (activeThread) {
     const thread = threads.find(t => t.id === activeThread);
     if (!thread) return null;
 
-    const sortedReplies = [...thread.replies].sort((a, b) => {
+    const sortedReplies = [...(thread.replies || [])].sort((a, b) => {
       if (a.isVerified && !b.isVerified) return -1;
       if (!a.isVerified && b.isVerified) return 1;
       return 0;
@@ -88,12 +135,11 @@ export default function Forum({ courseId, role }) {
           ← Kembali ke Forum
         </button>
 
-        {/* Original Post */}
-        <div className={`rounded-2xl p-6 mb-6 ${thread.isAnnouncement ? "bg-amber-50 border border-amber-200" : "bg-white border border-gray-200"}`}>
+        <div className={'rounded-2xl p-6 mb-6 ' + (thread.isAnnouncement ? "bg-amber-50 border border-amber-200" : "bg-white border border-gray-200")}>
           <div className="flex items-center gap-2 mb-2">
             {thread.isAnnouncement && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">📌 Pengumuman</span>}
-            <span className={`text-xs px-2 py-0.5 rounded-full ${thread.role === "lecturer" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
-              {thread.role === "lecturer" ? "👨‍🏫" : "👨‍🎓"} {thread.author}
+            <span className={'text-xs px-2 py-0.5 rounded-full ' + (thread.role === "lecturer" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700")}>
+              {thread.role === "lecturer" ? "👨🏫" : "👨🎓"} {thread.author}
             </span>
             <span className="text-xs text-gray-400">{thread.createdAt}</span>
           </div>
@@ -106,16 +152,15 @@ export default function Forum({ courseId, role }) {
           )}
         </div>
 
-        {/* Replies */}
-        <h4 className="font-semibold text-gray-700 mb-4">{thread.replies.length} Balasan</h4>
+        <h4 className="font-semibold text-gray-700 mb-4">{thread.replies?.length || 0} Balasan</h4>
 
         {sortedReplies.map(reply => (
-          <div key={reply.id} className={`rounded-xl p-4 mb-3 ml-0 md:ml-6 border ${
+          <div key={reply.id} className={'rounded-xl p-4 mb-3 ml-0 md:ml-6 border ' + (
             reply.isVerified ? "bg-green-50 border-green-200" : "bg-white border-gray-200"
-          }`}>
+          )}>
             <div className="flex items-center gap-2 mb-1">
-              <span className={`text-xs px-2 py-0.5 rounded-full ${reply.role === "lecturer" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
-                {reply.role === "lecturer" ? "👨‍🏫" : "👨‍🎓"} {reply.author}
+              <span className={'text-xs px-2 py-0.5 rounded-full ' + (reply.role === "lecturer" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700")}>
+                {reply.role === "lecturer" ? "👨🏫" : "👨🎓"} {reply.author}
               </span>
               <span className="text-xs text-gray-400">{reply.createdAt}</span>
               {reply.isVerified && (
@@ -140,7 +185,6 @@ export default function Forum({ courseId, role }) {
           </div>
         ))}
 
-        {/* Reply Input */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 mt-4">
           <textarea value={replyContent} onChange={e => setReplyContent(e.target.value)}
             placeholder="Tulis balasanmu..."
@@ -218,7 +262,6 @@ export default function Forum({ courseId, role }) {
         </div>
       ) : (
         <>
-          {/* Announcements */}
           {announcements.length > 0 && (
             <div className="mb-6">
               <h4 className="text-sm font-semibold text-amber-600 mb-3">📌 Pengumuman</h4>
@@ -237,7 +280,6 @@ export default function Forum({ courseId, role }) {
             </div>
           )}
 
-          {/* Discussion Threads */}
           {normalThreads.length > 0 && (
             <div>
               {announcements.length > 0 && <h4 className="text-sm font-semibold text-gray-500 mb-3">🧵 Diskusi</h4>}
@@ -247,8 +289,8 @@ export default function Forum({ courseId, role }) {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${thread.role === "lecturer" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
-                          {thread.role === "lecturer" ? "👨‍🏫 Pengajar" : "👨‍🎓 Siswa"}
+                        <span className={'text-xs px-2 py-0.5 rounded-full ' + (thread.role === "lecturer" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700")}>
+                          {thread.role === "lecturer" ? "👨🏫 Pengajar" : "👨🎓 Siswa"}
                         </span>
                         <span className="text-xs text-gray-400">{thread.createdAt}</span>
                       </div>
@@ -256,7 +298,7 @@ export default function Forum({ courseId, role }) {
                       <p className="text-sm text-gray-500 mt-1 line-clamp-2">{thread.content}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <span className="text-xs text-gray-400">{thread.replies.length} 💬</span>
+                      <span className="text-xs text-gray-400">{thread.replies?.length || 0} 💬</span>
                     </div>
                   </div>
                 </div>
