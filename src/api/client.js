@@ -22,6 +22,7 @@ export const api = {
   getCourses: () => request('/courses'),
   getCourse: (id) => request('/courses/' + id),
   enrollCourse: (id, category) => request('/courses/' + id + '/enroll', { method: 'POST', body: JSON.stringify({ category }) }),
+  updateCourse: (id, data) => request('/courses/' + id, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Users
   getUser: (id) => request('/users/' + id),

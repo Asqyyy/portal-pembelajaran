@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { courses, sectionTemplates } from "../data/mockData";
+import { api } from "../api/client";
 import QRAttendance from "./QRAttendance";
 import QuizEngine from "./QuizEngine";
 import Forum from "./Forum";
@@ -9,15 +10,27 @@ import Gradebook from "./Gradebook";
 function ExpandableSection({ section, content, isOpen, onToggle, role, onSave, courseId }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content || "");
-  const [files, setFiles] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`files_${courseId}_${section.key}`) || "[]");
-    } catch { return []; }
-  });
+  const [files, setFiles] = useState([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState("");
 
+  // Load files from API
   useEffect(() => {
-    localStorage.setItem(`files_${courseId}_${section.key}`, JSON.stringify(files));
-  }, [files, courseId, section.key]);
+    setFilesLoading(true);
+    api.getCourse(courseId)
+      .then((data) => {
+        const sectionFiles = data.sections?.[section.key]?.files || [];
+        setFiles(sectionFiles);
+      })
+      .catch(() => {
+        // Fallback to localStorage
+        try {
+          const localFiles = JSON.parse(localStorage.getItem('files_' + courseId + '_' + section.key) || "[]");
+          setFiles(localFiles);
+        } catch {}
+      })
+      .finally(() => setFilesLoading(false));
+  }, [courseId, section.key]);
 
   const handleSave = () => {
     onSave(section.key, editContent);
@@ -32,6 +45,7 @@ function ExpandableSection({ section, content, isOpen, onToggle, role, onSave, c
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setFilesError("");
     const reader = new FileReader();
     reader.onload = () => {
       const newFile = {
@@ -42,13 +56,27 @@ function ExpandableSection({ section, content, isOpen, onToggle, role, onSave, c
         data: reader.result,
         uploadedAt: new Date().toLocaleDateString("id-ID"),
       };
-      setFiles([...files, newFile]);
+      const updatedFiles = [...files, newFile];
+      setFiles(updatedFiles);
+      // Try saving to API via updateCourse with sections
+      api.updateCourse(courseId, {
+        sections: { [section.key]: { files: updatedFiles } }
+      }).catch(() => {
+        // Fallback to localStorage
+        localStorage.setItem('files_' + courseId + '_' + section.key, JSON.stringify(updatedFiles));
+      });
     };
     reader.readAsDataURL(file);
   };
 
   const handleDeleteFile = (fileId) => {
-    setFiles(files.filter((f) => f.id !== fileId));
+    const updatedFiles = files.filter((f) => f.id !== fileId);
+    setFiles(updatedFiles);
+    api.updateCourse(courseId, {
+      sections: { [section.key]: { files: updatedFiles } }
+    }).catch(() => {
+      localStorage.setItem('files_' + courseId + '_' + section.key, JSON.stringify(updatedFiles));
+    });
   };
 
   return (
@@ -70,20 +98,20 @@ function ExpandableSection({ section, content, isOpen, onToggle, role, onSave, c
                 e.stopPropagation();
                 if (isEditing) { handleSave(); } else { setIsEditing(true); setEditContent(content || ""); }
               }}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={'px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ' + (
                 isEditing
                   ? "bg-green-500 text-white hover:bg-green-600"
                   : "bg-blue-50 text-blue-600 hover:bg-blue-100"
-              }`}
+              )}
             >
               {isEditing ? "💾 Simpan" : "✏️ Edit"}
             </button>
           )}
-          <span className={`expandable-arrow ${isOpen ? "open" : ""}`}>▼</span>
+          <span className={'expandable-arrow ' + (isOpen ? "open" : "")}>▼</span>
         </div>
       </div>
 
-      <div className={`expandable-content ${isOpen ? "open" : ""}`}>
+      <div className={'expandable-content ' + (isOpen ? "open" : "")}>
         {isEditing ? (
           <div>
             <textarea
@@ -119,6 +147,9 @@ function ExpandableSection({ section, content, isOpen, onToggle, role, onSave, c
               <span className="text-xs text-gray-400 ml-2">PDF, dokumen, gambar, dll.</span>
             </div>
           )}
+
+          {filesError && <p className="text-xs text-red-500 mb-2">{filesError}</p>}
+          {filesLoading && <p className="text-xs text-gray-400">Loading files...</p>}
 
           {files.length > 0 ? (
             <div className="space-y-2">
@@ -158,60 +189,79 @@ function ExpandableSection({ section, content, isOpen, onToggle, role, onSave, c
 }
 
 function AssignmentSection({ courseId, role }) {
-  const [assignments, setAssignments] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`assignments_${courseId}`) || "[]");
-    } catch { return []; }
-  });
+  const [assignments, setAssignments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [newTask, setNewTask] = useState({ title: "", description: "", deadline: "" });
 
+  // Load assignments from API
   useEffect(() => {
-    localStorage.setItem(`assignments_${courseId}`, JSON.stringify(assignments));
+    setLoading(true);
+    api.getCourse(courseId)
+      .then((data) => {
+        setAssignments(data.assignments || []);
+      })
+      .catch(() => {
+        // Fallback to localStorage
+        try {
+          setAssignments(JSON.parse(localStorage.getItem('assignments_' + courseId) || "[]"));
+        } catch {}
+      })
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  // Cache in localStorage as fallback
+  useEffect(() => {
+    if (assignments.length > 0) {
+      localStorage.setItem('assignments_' + courseId, JSON.stringify(assignments));
+    }
   }, [assignments, courseId]);
 
   const handleCreateAssignment = () => {
     if (!newTask.title || !newTask.deadline) return;
-    setAssignments([
-      ...assignments,
-      {
-        id: Date.now(),
-        ...newTask,
-        createdAt: new Date().toLocaleDateString("id-ID"),
-        submissions: [],
-      },
-    ]);
+    const newAssignment = {
+      id: Date.now(),
+      ...newTask,
+      createdAt: new Date().toLocaleDateString("id-ID"),
+      submissions: [],
+    };
+    const updated = [...assignments, newAssignment];
+    setAssignments(updated);
     setNewTask({ title: "", description: "", deadline: "" });
     setShowForm(false);
+    // Try API
+    api.updateCourse(courseId, { assignments: updated }).catch(() => {});
   };
 
   const handleSubmitAssignment = (assignmentId, file) => {
     const reader = new FileReader();
     reader.onload = () => {
-      setAssignments((prev) =>
-        prev.map((a) =>
-          a.id === assignmentId
-            ? {
-                ...a,
-                submissions: [
-                  ...a.submissions,
-                  {
-                    id: Date.now(),
-                    fileName: file.name,
-                    data: reader.result,
-                    submittedAt: new Date().toLocaleDateString("id-ID"),
-                    student: "Kamu",
-                  },
-                ],
-              }
-            : a
-        )
+      const updated = assignments.map((a) =>
+        a.id === assignmentId
+          ? {
+              ...a,
+              submissions: [
+                ...a.submissions,
+                {
+                  id: Date.now(),
+                  fileName: file.name,
+                  data: reader.result,
+                  submittedAt: new Date().toLocaleDateString("id-ID"),
+                  student: "Kamu",
+                },
+              ],
+            }
+          : a
       );
+      setAssignments(updated);
+      api.updateCourse(courseId, { assignments: updated }).catch(() => {});
     };
     reader.readAsDataURL(file);
   };
 
   const now = new Date();
+
+  if (loading) return <p className="text-sm text-gray-400">Loading assignments...</p>;
 
   return (
     <div className="mt-6">
@@ -278,7 +328,7 @@ function AssignmentSection({ courseId, role }) {
                     <h4 className="font-semibold text-gray-800">{a.title}</h4>
                     <p className="text-sm text-gray-500 mt-1">{a.description}</p>
                   </div>
-                  <span className={`badge text-xs ${isOverdue ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>
+                  <span className={'badge text-xs ' + (isOverdue ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600")}>
                     {isOverdue ? "⏰ Tertutup" : "🟢 Buka"}
                   </span>
                 </div>
@@ -288,7 +338,6 @@ function AssignmentSection({ courseId, role }) {
                   <span>📤 Terkumpul: {a.submissions.length}</span>
                 </div>
 
-                {/* Student submission */}
                 {role === "student" && !isOverdue && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium cursor-pointer hover:bg-blue-100 transition-colors">
@@ -302,7 +351,6 @@ function AssignmentSection({ courseId, role }) {
                   </div>
                 )}
 
-                {/* Show submissions for lecturer */}
                 {role === "lecturer" && a.submissions.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <p className="text-xs font-semibold text-gray-500 mb-2">📥 Tugas Terkumpul:</p>
@@ -321,7 +369,6 @@ function AssignmentSection({ courseId, role }) {
                   </div>
                 )}
 
-                {/* Student: show own submissions */}
                 {role === "student" && a.submissions.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <p className="text-xs text-green-600">✅ Tugas sudah dikumpulkan</p>
@@ -343,51 +390,101 @@ function AssignmentSection({ courseId, role }) {
 
 export default function CourseDetail({ courseId, courseCode, setCurrentPage, role, user }) {
   const course = courses.find((c) => c.id === courseId);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [openSections, setOpenSections] = useState(() => {
     const initial = {};
     sectionTemplates.forEach((s) => (initial[s.key] = false));
     initial.generalInfo = true;
     return initial;
   });
-  const [details, setDetails] = useState(() => {
-    const saved = JSON.parse(localStorage.getItem(`courseDetails_${courseId}`));
-    if (saved) return saved;
-    if (window.mockCourseDetails?.[courseId]) return { ...window.mockCourseDetails[courseId] };
-    const empty = {};
-    sectionTemplates.forEach((s) => (empty[s.key] = ""));
-    return empty;
-  });
-  const [lecturers, setLecturers] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`lecturers_${courseId}`) || "[]");
-    } catch { return []; }
-  });
+  const [details, setDetails] = useState({});
+  const [lecturers, setLecturers] = useState([]);
   const [showAddLecturer, setShowAddLecturer] = useState(false);
   const [newLecturerName, setNewLecturerName] = useState("");
 
+  // Load course data from API
   useEffect(() => {
-    localStorage.setItem(`courseDetails_${courseId}`, JSON.stringify(details));
-  }, [details, courseId]);
-
-  useEffect(() => {
-    localStorage.setItem(`lecturers_${courseId}`, JSON.stringify(lecturers));
-  }, [lecturers, courseId]);
+    setLoading(true);
+    setError("");
+    api.getCourse(courseId)
+      .then((data) => {
+        // Load section content
+        const sections = {};
+        sectionTemplates.forEach((s) => {
+          sections[s.key] = data.sections?.[s.key]?.content || data[s.key] || "";
+        });
+        setDetails(sections);
+        setLecturers(data.lecturers || course?.lecturers || []);
+      })
+      .catch((err) => {
+        setError("Gagal memuat data kursus. Menggunakan data lokal.");
+        // Fallback to localStorage
+        try {
+          const saved = JSON.parse(localStorage.getItem('courseDetails_' + courseId));
+          if (saved) setDetails(saved);
+        } catch {}
+        try {
+          const savedLec = JSON.parse(localStorage.getItem('lecturers_' + courseId) || "[]");
+          if (savedLec.length > 0) setLecturers(savedLec);
+          else setLecturers(course?.lecturers || []);
+        } catch {
+          setLecturers(course?.lecturers || []);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [courseId]);
 
   const toggleSection = (key) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handleSave = (key, content) => {
-    setDetails((prev) => ({ ...prev, [key]: content }));
+    const updated = { ...details, [key]: content };
+    setDetails(updated);
+    // Save via API
+    api.updateCourse(courseId, { sections: { [key]: { content } } }).catch(() => {
+      // Fallback to localStorage
+      localStorage.setItem('courseDetails_' + courseId, JSON.stringify(updated));
+    });
   };
 
   const handleAddLecturer = () => {
     if (newLecturerName.trim()) {
-      setLecturers([...lecturers, newLecturerName.trim()]);
+      const updated = [...lecturers, newLecturerName.trim()];
+      setLecturers(updated);
       setNewLecturerName("");
       setShowAddLecturer(false);
+      api.updateCourse(courseId, { lecturers: updated }).catch(() => {
+        localStorage.setItem('lecturers_' + courseId, JSON.stringify(updated));
+      });
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f0f4f8]">
+        <div className="text-center">
+          <div className="text-4xl mb-4">⏳</div>
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f0f4f8]">
+        <div className="text-center max-w-md">
+          <div className="text-4xl mb-4">⚠️</div>
+          <p className="text-red-500 mb-4">Error: {error}</p>
+          <button onClick={() => setCurrentPage("courses")} className="px-6 py-3 bg-purple-500 text-white rounded-xl">
+            ← Kembali ke Kursus Saya
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!course) {
     return (
@@ -431,7 +528,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
               {[...(course.lecturers || []), ...lecturers].length > 0 ? (
                 [...(course.lecturers || []), ...lecturers].map((lec, i) => (
                   <span key={i} className="badge bg-purple-400/20 text-purple-200 border border-purple-400/30">
-                    👨‍🏫 {lec}
+                    👨🏫 {lec}
                   </span>
                 ))
               ) : (
@@ -446,8 +543,8 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
       <div className="max-w-5xl mx-auto px-6 -mt-4">
         <div className="bg-white rounded-xl px-6 py-3 shadow-sm flex items-center gap-3 mb-6 flex-wrap">
           <span className="text-sm text-gray-500">Melihat sebagai:</span>
-          <span className={`badge ${role === "lecturer" ? "badge-lecturer" : "badge-student"}`}>
-            {role === "lecturer" ? "👨‍🏫 Pengajar (Dapat Mengedit)" : "👨‍🎓 Siswa (Hanya Melihat)"}
+          <span className={'badge ' + (role === "lecturer" ? "badge-lecturer" : "badge-student")}>
+            {role === "lecturer" ? "👨🏫 Pengajar (Dapat Mengedit)" : "👨🎓 Siswa (Hanya Melihat)"}
           </span>
 
           {role === "lecturer" && (
@@ -463,7 +560,11 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
             <button
               key={i}
               onClick={() => {
-                setLecturers(lecturers.filter((_, j) => j !== i));
+                const updated = lecturers.filter((_, j) => j !== i);
+                setLecturers(updated);
+                api.updateCourse(courseId, { lecturers: updated }).catch(() => {
+                  localStorage.setItem('lecturers_' + courseId, JSON.stringify(updated));
+                });
               }}
               className="text-xs text-red-400 hover:text-red-600 ml-1"
               title="Hapus pengajar"
@@ -509,7 +610,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
           />
         ))}
 
-        {/* Assignment section (separate, below all expandables) */}
+        {/* Assignment section */}
         <div className="expandable-section mt-4">
           <div className="expandable-header">
             <div className="flex items-center gap-3">
@@ -537,7 +638,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
             </div>
           </div>
           <div className="expandable-content open">
-            <QRAttendance courseCode={courseCode || `COURSE-${courseId}`} role={role} />
+            <QRAttendance courseCode={courseCode || 'COURSE-' + courseId} role={role} />
           </div>
         </div>
 
