@@ -61,7 +61,7 @@ router.delete('/component/:id', authenticate, async (req, res) => {
   }
 });
 
-// PUT /api/gradebook/grade — update/upsert student score
+// PUT /api/gradebook/grade — upsert student score
 router.put('/grade', authenticate, async (req, res) => {
   try {
     if (req.user.role !== 'lecturer') {
@@ -71,35 +71,26 @@ router.put('/grade', authenticate, async (req, res) => {
     if (!component_id || !student_name || !course_id) {
       return res.status(400).json({ error: 'component_id, student_name, dan course_id wajib diisi' });
     }
-    const { rows } = await pool.query(
-      `INSERT INTO grades (component_id, student_name, course_id, score, user_id)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT ON CONSTRAINT grades_unique_composite DO NOTHING
+
+    // Try update first
+    const updateResult = await pool.query(
+      `UPDATE grades SET score = $1, user_id = COALESCE($2, grades.user_id)
+       WHERE component_id = $3 AND student_name = $4 AND course_id = $5
        RETURNING *`,
+      [score || 0, user_id || null, component_id, student_name, course_id]
+    );
+
+    if (updateResult.rows.length > 0) {
+      return res.json(updateResult.rows[0]);
+    }
+
+    // Insert if no existing row
+    const insertResult = await pool.query(
+      `INSERT INTO grades (component_id, student_name, course_id, score, user_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [component_id, student_name, course_id, score || 0, user_id || null]
     );
-    if (rows.length === 0) {
-      // Fallback: update existing
-      const existing = await pool.query(
-        'SELECT id FROM grades WHERE component_id = $1 AND student_name = $2 AND course_id = $3',
-        [component_id, student_name, course_id]
-      );
-      if (existing.rows.length > 0) {
-        const updated = await pool.query(
-          'UPDATE grades SET score = $1, user_id = COALESCE($2, user_id) WHERE id = $3 RETURNING *',
-          [score || 0, user_id || null, existing.rows[0].id]
-        );
-        return res.json(updated.rows[0]);
-      }
-      // Create if no constraint and no existing row
-      const created = await pool.query(
-        `INSERT INTO grades (component_id, student_name, course_id, score, user_id)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [component_id, student_name, course_id, score || 0, user_id || null]
-      );
-      return res.status(201).json(created.rows[0]);
-    }
-    res.status(201).json(rows[0]);
+    res.status(201).json(insertResult.rows[0]);
   } catch (err) {
     console.error('Update grade error:', err);
     res.status(500).json({ error: 'Gagal mengupdate nilai' });
