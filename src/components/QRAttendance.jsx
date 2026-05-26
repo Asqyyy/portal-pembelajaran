@@ -1,105 +1,70 @@
 import { useState, useEffect, useRef } from "react";
 import QRCodeLib from "qrcode";
 
-const SESSION_KEY = (code) => `qr_session_${code}`;
-
 export default function QRAttendance({ courseCode, role }) {
-  const [qrImage,   setQrImage]   = useState("");
-  const [timeLeft,  setTimeLeft]  = useState(0);
-  const [isActive,  setIsActive]  = useState(false);
-  const [session,   setSession]   = useState(null);   // shared via localStorage
-  const [duration,  setDuration]  = useState(120);
-  const [message,   setMessage]   = useState("");
+  const [qrData, setQrData] = useState(null);
+  const [qrImage, setQrImage] = useState("");
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [isActive, setIsActive] = useState(false);
+  const [duration, setDuration] = useState(120); // seconds
+  const [message, setMessage] = useState("");
   const [attendanceRecords, setAttendanceRecords] = useState([]);
-  const intervalRef  = useRef(null);
-  const pollRef      = useRef(null);   // for student polling
+  const canvasRef = useRef(null);
+  const intervalRef = useRef(null);
 
-  // ── Init ──────────────────────────────────────────────
   useEffect(() => {
-    loadRecords();
-    // Restore active session if lecturer had one
-    const saved = readSession();
-    if (saved && Date.now() < saved.expiresAt) {
-      setSession(saved);
-      setIsActive(true);
-      setTimeLeft(Math.round((saved.expiresAt - Date.now()) / 1000));
-      generateQR(saved);
-    }
-    return () => { clearInterval(intervalRef.current); clearInterval(pollRef.current); };
+    loadAttendanceRecords();
+    return () => clearInterval(intervalRef.current);
   }, [courseCode]);
 
-  // ── Student: poll localStorage every 2 s for active session ──
-  useEffect(() => {
-    if (role !== "student") return;
-    const poll = () => {
-      const s = readSession();
-      if (s && Date.now() < s.expiresAt) {
-        if (!session || s.token !== session.token) {
-          setSession(s);
-          setIsActive(true);
-          generateQR(s);
-        }
-      } else {
-        setIsActive(false);
-        setSession(null);
-        setQrImage("");
-      }
-    };
-    pollRef.current = setInterval(poll, 1500);
-    poll(); // run immediately
-    return () => clearInterval(pollRef.current);
-  }, [role, courseCode, session]);
-
-  // ── Helpers ───────────────────────────────────────────
-  const readSession = () => {
-    try { return JSON.parse(localStorage.getItem(SESSION_KEY(courseCode))); }
-    catch { return null; }
-  };
-
-  const writeSession = (data) => {
-    localStorage.setItem(SESSION_KEY(courseCode), JSON.stringify(data));
-  };
-
-  const clearSession = () => {
-    localStorage.removeItem(SESSION_KEY(courseCode));
-  };
-
-  const loadRecords = () => {
-    const r = JSON.parse(localStorage.getItem(`attendance_${courseCode}`) || "[]");
-    setAttendanceRecords(r);
+  const loadAttendanceRecords = () => {
+    const key = `attendance_${courseCode}`;
+    const records = JSON.parse(localStorage.getItem(key) || "[]");
+    setAttendanceRecords(records);
   };
 
   const generateQR = async (data) => {
     try {
       const url = await QRCodeLib.toDataURL(JSON.stringify(data), {
-        width: 240, margin: 2,
+        width: 280,
+        margin: 2,
         color: { dark: "#1e3a5f", light: "#ffffff" },
       });
       setQrImage(url);
-    } catch (e) { console.error("QR error:", e); }
+    } catch (e) {
+      console.error("QR generation error:", e);
+    }
   };
 
-  const makeNewToken = (dur) => {
-    const token = Math.random().toString(36).substring(2, 10);
-    const now   = Date.now();
-    return { courseCode, token, generatedAt: now, expiresAt: now + dur * 1000 };
-  };
-
-  // ── Lecturer: start ───────────────────────────────────
   const startQRSession = () => {
-    const data = makeNewToken(duration);
-    setSession(data); setIsActive(true);
-    setTimeLeft(duration); setMessage("");
-    writeSession(data);
+    const token = Math.random().toString(36).substring(2, 10);
+    const now = Date.now();
+    const data = {
+      courseCode,
+      token,
+      generatedAt: now,
+      expiresAt: now + duration * 1000,
+    };
+    setQrData(data);
+    setIsActive(true);
+    setTimeLeft(duration);
+    setMessage("");
     generateQR(data);
 
     clearInterval(intervalRef.current);
     intervalRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          const newData = makeNewToken(duration);
-          setSession(newData);
-          writeSession(newData);
+          // Regenerate with new token (anti-cheat)
+          const newToken = Math.random().toString(36).substring(2, 10);
+          const newNow = Date.now();
+          const newData = {
+            courseCode,
+            token: newToken,
+            generatedAt: newNow,
+            expiresAt: newNow + duration * 1000,
+          };
+          setQrData(newData);
           generateQR(newData);
           return duration;
         }
@@ -108,31 +73,43 @@ export default function QRAttendance({ courseCode, role }) {
     }, 1000);
   };
 
-  // ── Lecturer: stop ────────────────────────────────────
   const stopQRSession = () => {
     clearInterval(intervalRef.current);
-    clearSession();
-    setIsActive(false); setQrImage(""); setSession(null); setTimeLeft(0);
+    setIsActive(false);
+    setQrImage("");
+    setQrData(null);
+    setTimeLeft(0);
   };
 
-  // ── Student: scan / tap ───────────────────────────────
-  const handleScan = () => {
-    if (!session) return;
-    const key     = `attendance_${courseCode}`;
-    const records = JSON.parse(localStorage.getItem(key) || "[]");
-    // Check if already scanned THIS token
-    if (records.find((r) => r.token === session.token && r.student === "Kamu")) {
-      setMessage("warn:Kamu sudah absen untuk sesi ini.");
+  const handleScan = (e) => {
+    // Student "scans" by clicking — in real app, use camera
+    if (!qrData) return;
+
+    const result = recordAttendance(courseCode, qrData.token);
+    if (result.success) {
+      setMessage("✅ Absen berhasil! Kehadiran tercatat.");
+      loadAttendanceRecords();
+      setTimeout(() => setMessage(""), 3000);
     } else {
-      records.push({
-        student: "Kamu", token: session.token,
-        time: new Date().toLocaleString("id-ID"), timestamp: Date.now(),
-      });
-      localStorage.setItem(key, JSON.stringify(records));
-      setMessage("ok:Absen berhasil! Kehadiran tercatat. ✅");
-      loadRecords();
+      setMessage(`⚠️ ${result.error}`);
+      setTimeout(() => setMessage(""), 3000);
     }
-    setTimeout(() => setMessage(""), 4000);
+  };
+
+  const recordAttendance = (cc, token) => {
+    const key = `attendance_${cc}`;
+    const records = JSON.parse(localStorage.getItem(key) || "[]");
+    if (records.find((r) => r.token === token && r.student === "Kamu")) {
+      return { success: false, error: "Kamu sudah absen untuk sesi ini." };
+    }
+    records.push({
+      student: "Kamu",
+      token,
+      time: new Date().toLocaleString("id-ID"),
+      timestamp: Date.now(),
+    });
+    localStorage.setItem(key, JSON.stringify(records));
+    return { success: true };
   };
 
   const clearRecords = () => {
@@ -140,131 +117,130 @@ export default function QRAttendance({ courseCode, role }) {
     setAttendanceRecords([]);
   };
 
-  const formatTime = (secs) =>
-    `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  const formatTime = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
 
-  const msgType    = message.startsWith("ok:") ? "success" : "warn";
-  const msgContent = message.replace(/^(ok:|warn:)/, "");
-
-  // ── Render ────────────────────────────────────────────
   return (
     <div>
-      {/* ═══════════ LECTURER ═══════════ */}
+      {/* Lecturer controls */}
       {role === "lecturer" && (
-        <div className="qr-lecturer-panel">
-          <h4 className="qr-panel-title">📱 QR Code Absensi</h4>
-          <p className="qr-panel-sub">
-            QR berganti otomatis setiap <strong>{duration} detik</strong>. Siswa cukup buka tab <em>Absensi QR</em> dan tap tombol Absen.
+        <div className="bg-indigo-50 rounded-xl p-6 mb-6">
+          <h4 className="font-bold text-indigo-800 text-lg mb-3">📱 QR Code Absensi</h4>
+          <p className="text-sm text-indigo-600 mb-4">
+            Aktifkan QR Code untuk sesi absensi. QR akan berganti otomatis setiap {duration} detik untuk mencegah kecurangan.
           </p>
 
-          <div className="qr-controls">
-            {!isActive ? (
-              <>
-                <div>
-                  <label className="qr-duration-label">Durasi per QR</label>
-                  <select
-                    value={duration}
-                    onChange={(e) => setDuration(Number(e.target.value))}
-                    className="qr-duration-select"
-                    id="qr-duration-select"
-                  >
-                    <option value={30}>30 detik</option>
-                    <option value={60}>1 menit</option>
-                    <option value={120}>2 menit</option>
-                    <option value={300}>5 menit</option>
-                  </select>
-                </div>
-                <button onClick={startQRSession} className="qr-start-btn" id="start-qr-btn">
-                  ▶ Mulai Absensi
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="qr-active-indicator">
-                  <span className="qr-active-dot" />
-                  Sesi Aktif
-                </div>
-                <span className="qr-timer">
-                  Berganti dalam: <strong>{formatTime(timeLeft)}</strong>
-                </span>
-                <button onClick={stopQRSession} className="qr-stop-btn" id="stop-qr-btn">
-                  ⏹ Hentikan
-                </button>
-              </>
-            )}
-          </div>
-
-          {qrImage && (
-            <div className="qr-image-wrap">
-              <img src={qrImage} alt="QR Absensi" width={240} height={240} />
-              <p className="qr-token">Token: {session?.token}</p>
-            </div>
-          )}
-
-          {!isActive && (
-            <p style={{ marginTop: 12, fontSize: "0.78rem", color: "#94a3b8" }}>
-              ℹ️ Setelah memulai, siswa yang membuka tab Absensi QR bisa langsung tap Absen.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* ═══════════ STUDENT — active ═══════════ */}
-      {role === "student" && isActive && (
-        <div className="qr-student-panel">
-          <h4 className="qr-student-title">📱 Absensi QR Aktif</h4>
-          <p className="qr-student-sub">Pengajar sedang membuka sesi absensi. Tap tombol di bawah untuk mencatat kehadiran.</p>
-
-          {qrImage && (
-            <div style={{ display: "inline-block", background: "white", borderRadius: 12, padding: 12, marginBottom: 16, border: "2px solid #bfdbfe" }}>
-              <img src={qrImage} alt="QR" width={180} height={180} />
-            </div>
-          )}
-
-          <div>
-            <button onClick={handleScan} className="qr-scan-btn" id="scan-qr-btn">
-              📸 Tap untuk Absen
-            </button>
-            <p className="qr-scan-hint">QR berganti otomatis tiap sesi untuk mencegah kecurangan</p>
-            {message && (
-              <div className={`qr-message ${msgType === "success" ? "qr-message-success" : "qr-message-warn"}`}>
-                {msgContent}
+          {!isActive ? (
+            <div className="flex items-center gap-4 flex-wrap">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Durasi per QR (detik)</label>
+                <select
+                  value={duration}
+                  onChange={(e) => setDuration(Number(e.target.value))}
+                  className="px-3 py-2 border border-indigo-200 rounded-lg text-sm bg-white focus:outline-none"
+                >
+                  <option value={30}>30 detik</option>
+                  <option value={60}>60 detik</option>
+                  <option value={120}>2 menit</option>
+                  <option value={300}>5 menit</option>
+                </select>
               </div>
-            )}
-          </div>
+              <button
+                onClick={startQRSession}
+                className="px-6 py-2.5 bg-indigo-500 text-white rounded-xl font-semibold hover:bg-indigo-600 transition-colors"
+              >
+                ▶ Mulai Absensi
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="bg-green-100 text-green-700 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                Sesi Aktif
+              </div>
+              <span className="text-sm text-gray-600">
+                QR berganti dalam: <strong className="text-indigo-700 font-mono">{formatTime(timeLeft)}</strong>
+              </span>
+              <button
+                onClick={stopQRSession}
+                className="px-4 py-2 bg-red-100 text-red-600 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors"
+              >
+                ⏹ Hentikan
+              </button>
+            </div>
+          )}
+
+          {qrImage && (
+            <div className="mt-4 bg-white rounded-xl p-4 inline-block shadow-sm">
+              <img src={qrImage} alt="QR Absensi" className="w-[280px] h-[280px]" />
+              <p className="text-center text-xs text-gray-400 mt-2 font-mono">
+                Token: {qrData?.token}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ═══════════ STUDENT — idle ═══════════ */}
-      {role === "student" && !isActive && (
-        <div className="qr-idle-panel">
-          <div className="qr-idle-icon">📱</div>
-          <p className="qr-idle-text">Belum ada sesi absensi aktif.</p>
-          <p style={{ fontSize: "0.78rem", color: "#94a3b8", marginTop: 4 }}>
-            Pengajar perlu membuka tab <strong>Absensi QR</strong> dan menekan <strong>Mulai Absensi</strong>.
+      {/* Student scanning */}
+      {role === "student" && isActive && (
+        <div className="bg-blue-50 rounded-xl p-6 mb-6 text-center">
+          <h4 className="font-bold text-blue-800 text-lg mb-3">📱 Absensi QR</h4>
+          <p className="text-sm text-blue-600 mb-4">
+            Scan QR Code yang ditampilkan pengajar untuk mencatat kehadiran.
           </p>
+          {qrImage && (
+            <div className="bg-white rounded-xl p-4 inline-block shadow-sm mb-4">
+              <img src={qrImage} alt="QR Absensi" className="w-[200px] h-[200px]" />
+            </div>
+          )}
+          <div>
+            <button
+              onClick={handleScan}
+              className="px-6 py-3 bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-600 transition-colors"
+            >
+              📸 Scan / Tap untuk Absen
+            </button>
+            <p className="text-xs text-gray-400 mt-2">QR berganti otomatis — pastikan scan QR terbaru</p>
+          </div>
+          {message && (
+            <div className={`mt-4 px-4 py-2 rounded-lg text-sm font-medium ${
+              message.includes("berhasil") ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+            }`}>
+              {message}
+            </div>
+          )}
         </div>
       )}
 
-      {/* ═══════════ RECORDS ═══════════ */}
+      {role === "student" && !isActive && (
+        <div className="bg-gray-50 rounded-xl p-6 mb-6 text-center">
+          <span className="text-4xl">📱</span>
+          <p className="text-sm text-gray-500 mt-2">Belum ada sesi absensi aktif. Tunggu pengajar memulai absensi.</p>
+        </div>
+      )}
+
+      {/* Attendance records */}
       {attendanceRecords.length > 0 && (
-        <div className="qr-records">
-          <div className="qr-records-header">
-            <span className="qr-records-title">📋 Riwayat Kehadiran ({attendanceRecords.length} orang)</span>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-semibold text-gray-700 text-sm">📋 Riwayat Kehadiran ({attendanceRecords.length})</h4>
             {role === "lecturer" && (
-              <button onClick={clearRecords} className="qr-clear-btn" id="clear-records-btn">
-                🗑 Hapus Semua
+              <button onClick={clearRecords} className="text-xs text-red-400 hover:text-red-600">
+                Hapus Semua
               </button>
             )}
           </div>
-          <div className="qr-records-list">
+          <div className="space-y-1 max-h-48 overflow-y-auto">
             {attendanceRecords.map((r, i) => (
-              <div key={i} className="qr-record-item">
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ color: "#10b981" }}>✅</span>
-                  <span className="qr-record-name">{r.student}</span>
+              <div key={i} className="flex items-center justify-between text-sm py-1.5 px-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-green-500">✅</span>
+                  <span className="font-medium text-gray-700">{r.student}</span>
                 </div>
-                <span className="qr-record-time">{r.time}</span>
+                <span className="text-xs text-gray-400">{r.time}</span>
               </div>
             ))}
           </div>
