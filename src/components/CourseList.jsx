@@ -1,238 +1,295 @@
 import { useState, useEffect } from "react";
-import { courses } from "../data/mockData";
+import { courses as allCourses } from "../data/mockData";
+import { api } from "../api/client";
 
-const FACULTY_COLORS = {
-  MIPA:   { bg: "bg-blue-50",   text: "text-blue-700",   dot: "bg-blue-400"   },
-  Bahasa: { bg: "bg-emerald-50",text: "text-emerald-700", dot: "bg-emerald-400" },
-  IPS:    { bg: "bg-orange-50", text: "text-orange-700",  dot: "bg-orange-400"  },
-  Umum:   { bg: "bg-slate-50",  text: "text-slate-700",   dot: "bg-slate-400"   },
-  Agama:  { bg: "bg-purple-50", text: "text-purple-700",  dot: "bg-purple-400"  },
-};
-
-export default function CourseList({ setCurrentPage, setSelectedCourse, role }) {
+export default function CourseList({ setCurrentPage, setSelectedCourse, role, user }) {
   const [activeTab, setActiveTab] = useState("learning");
-  const [enrolledCourses, setEnrolledCourses] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("enrolledCourses") || "[]"); }
-    catch { return []; }
-  });
+  const [enrolledCourses, setEnrolledCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [enrollCode, setEnrollCode] = useState("");
   const [enrollError, setEnrollError] = useState("");
   const [enrollSuccess, setEnrollSuccess] = useState("");
 
+  // Fetch enrolled courses from API
   useEffect(() => {
-    localStorage.setItem("enrolledCourses", JSON.stringify(enrolledCourses));
+    if (!user) { setLoading(false); return; }
+    setLoading(true);
+    setError("");
+    api.getCourses()
+      .then((data) => {
+        const courses = Array.isArray(data) ? data : (data.courses || []);
+        // Filter by enrolled category
+        const learning = courses.filter(c => c.category === "learning");
+        const teaching = courses.filter(c => c.category === "teaching");
+        setEnrolledCourses([...learning, ...teaching]);
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch courses from API:", err);
+        // Fallback: use cached data
+        try {
+          const cached = JSON.parse(localStorage.getItem("enrolledCourses") || "[]");
+          if (cached.length > 0) setEnrolledCourses(cached);
+        } catch {}
+        setError("Gagal memuat kursus dari server. Menampilkan data cache.");
+      })
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  // Cache enrolled courses
+  useEffect(() => {
+    if (enrolledCourses.length > 0) {
+      localStorage.setItem("enrolledCourses", JSON.stringify(enrolledCourses));
+    }
   }, [enrolledCourses]);
 
-  const handleEnroll = () => {
-    setEnrollError(""); setEnrollSuccess("");
+  const handleEnroll = async () => {
+    setEnrollError("");
+    setEnrollSuccess("");
     const code = enrollCode.trim().toUpperCase();
-    if (!code) { setEnrollError("Masukkan kode mata pelajaran terlebih dahulu."); return; }
-    const course = courses.find((c) => c.courseCode === code);
-    if (!course) { setEnrollError("Kode tidak ditemukan. Periksa kembali."); return; }
-    if (enrolledCourses.some((c) => c.id === course.id && c.category === activeTab)) {
-      setEnrollError("Kamu sudah terdaftar di mata pelajaran ini."); return;
+    if (!code) {
+      setEnrollError("Masukkan kode mata pelajaran terlebih dahulu.");
+      return;
     }
-    setEnrolledCourses([...enrolledCourses, { ...course, category: activeTab }]);
-    setEnrollSuccess(`Berhasil mendaftar ke "${course.courseName}"!`);
-    setEnrollCode("");
+    const course = allCourses.find((c) => c.courseCode === code);
+    if (!course) {
+      setEnrollError("Kode mata pelajaran tidak ditemukan. Periksa kembali kode yang dimasukkan.");
+      return;
+    }
+    if (enrolledCourses.some((c) => c.courseCode === code && c.category === activeTab)) {
+      setEnrollError("Kamu sudah terdaftar di mata pelajaran ini.");
+      return;
+    }
+
+    try {
+      // Try API enroll
+      await api.enrollCourse(course.id, activeTab);
+      const entry = { ...course, category: activeTab, id: course.id };
+      setEnrolledCourses([...enrolledCourses, entry]);
+      setEnrollSuccess('Berhasil mendaftar ke "' + course.courseName + '"!');
+      setEnrollCode("");
+    } catch (err) {
+      // Fallback: local enroll
+      const entry = { ...course, category: activeTab };
+      setEnrolledCourses([...enrolledCourses, entry]);
+      setEnrollSuccess('Berhasil mendaftar ke "' + course.courseName + '" (local)!');
+      setEnrollCode("");
+    }
   };
 
   const displayedCourses = enrolledCourses.filter((c) => c.category === activeTab);
-  const learningCount = enrolledCourses.filter((c) => c.category === "learning").length;
-  const teachingCount = enrolledCourses.filter((c) => c.category === "teaching").length;
-
-  const openEnrollModal = () => {
-    setEnrollError(""); setEnrollSuccess(""); setEnrollCode("");
-    setShowEnrollModal(true);
-  };
 
   return (
-    <div className="min-h-screen" style={{ background: "#f0f4f8" }}>
-      {/* Hero Header */}
-      <div className="courselist-header">
-        <div className="courselist-header-inner">
+    <div className="min-h-screen bg-[#f0f4f8] page-enter">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white py-8 sm:py-10 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-4">
           <div>
-            <div className="courselist-header-badge">
-              {activeTab === "learning" ? "👨‍🎓 Mode Siswa" : "👨‍🏫 Mode Pengajar"}
-            </div>
-            <h2 className="courselist-header-title">
-              {activeTab === "learning" ? "Kursus Saya" : "Kelas yang Saya Ajar"}
-            </h2>
-            <p className="courselist-header-sub">
+            <h2 className="text-2xl sm:text-3xl font-bold">📚 Kursus Saya</h2>
+            <p className="text-white/70 mt-2 text-sm sm:text-base">
               {activeTab === "learning"
-                ? `${learningCount} mata pelajaran aktif`
-                : `${teachingCount} kelas yang diampu`}
+                ? "Mata pelajaran yang sedang kamu pelajari"
+                : "Mata pelajaran yang kamu ajar"}
             </p>
           </div>
           <button
-            id="enroll-btn"
-            onClick={openEnrollModal}
-            className="courselist-enroll-btn"
+            onClick={() => {
+              setEnrollError("");
+              setEnrollSuccess("");
+              setEnrollCode("");
+              setShowEnrollModal(true);
+            }}
+            className="px-5 sm:px-6 py-3 bg-white text-purple-700 rounded-xl font-semibold hover:bg-white/90 hover:-translate-y-0.5 transition-all flex items-center gap-2 shadow-lg"
           >
-            <span className="courselist-enroll-icon">＋</span>
-            Enroll Kursus
+            <span>➕</span> Enroll Kursus
           </button>
         </div>
       </div>
 
-      <div className="courselist-body">
-        {/* Tabs */}
-        <div className="courselist-tabs-wrap">
-          <div className="courselist-tabs">
-            {[
-              { key: "learning", icon: "📖", label: "Sedang Dipelajari", count: learningCount, color: "tab-blue" },
-              { key: "teaching", icon: "🎓", label: "Sedang Diajar",     count: teachingCount, color: "tab-purple" },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`courselist-tab ${activeTab === tab.key ? `courselist-tab-active ${tab.color}` : ""}`}
-                id={`tab-${tab.key}`}
-              >
-                <span className="courselist-tab-icon">{tab.icon}</span>
-                <span>{tab.label}</span>
-                <span className={`courselist-tab-count ${activeTab === tab.key ? "courselist-tab-count-active" : ""}`}>
-                  {tab.count}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Content */}
-        {displayedCourses.length === 0 ? (
-          <div className="courselist-empty">
-            <div className="courselist-empty-icon">📭</div>
-            <h3 className="courselist-empty-title">Belum ada kursus</h3>
-            <p className="courselist-empty-desc">
-              {activeTab === "learning"
-                ? "Kamu belum mendaftar ke mata pelajaran manapun."
-                : "Kamu belum terdaftar sebagai pengajar di kelas manapun."}
-              <br />Klik tombol <strong>Enroll Kursus</strong> untuk mulai!
-            </p>
-            <button
-              onClick={openEnrollModal}
-              className="courselist-empty-btn"
-              id="enroll-empty-btn"
-            >
-              ＋ Enroll Kursus Sekarang
-            </button>
-          </div>
-        ) : (
-          <div className="courselist-grid">
-            {displayedCourses.map((course, idx) => {
-              const fc = FACULTY_COLORS[course.faculty] || FACULTY_COLORS["Umum"];
-              return (
-                <div key={`${course.id}-${course.category}`} className="course-card">
-                  {/* Card top */}
-                  <div className="course-card-top">
-                    <div className="course-card-index">
-                      {String(idx + 1).padStart(2, "0")}
-                    </div>
-                    <span className={`course-card-code`}>
-                      {course.courseCode}
-                    </span>
-                  </div>
-
-                  {/* Course name */}
-                  <h3 className="course-card-name">{course.courseName}</h3>
-
-                  {/* Faculty badge */}
-                  <div className="course-card-meta">
-                    <span className={`course-card-faculty ${fc.bg} ${fc.text}`}>
-                      <span className={`course-card-dot ${fc.dot}`} />
-                      {course.faculty}
-                    </span>
-                  </div>
-
-                  {/* Lecturers */}
-                  {course.lecturers && course.lecturers.length > 0 && (
-                    <div className="course-card-lecturers">
-                      {course.lecturers.map((lec, i) => (
-                        <span key={i} className="badge badge-lecturer">{lec}</span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Action */}
-                  <button
-                    onClick={() => { setSelectedCourse({ ...course }); setCurrentPage("courseDetail"); }}
-                    className="course-card-btn"
-                    id={`view-course-${course.id}`}
-                  >
-                    Lihat Detail <span>→</span>
-                  </button>
-                </div>
-              );
-            })}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 -mt-6">
+        {/* Loading */}
+        {loading && (
+          <div className="content-card text-center py-16">
+            <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-gray-500 font-medium">Memuat kursus...</p>
           </div>
         )}
-      </div>
 
-      {/* Enroll Modal */}
-      {showEnrollModal && (
-        <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
-          <div className="enroll-modal" onClick={(e) => e.stopPropagation()}>
-            {/* Modal header */}
-            <div className="enroll-modal-header">
-              <div>
-                <h3 className="enroll-modal-title">Enroll Kursus</h3>
-                <p className="enroll-modal-sub">
-                  Masuk sebagai{" "}
-                  <strong>{activeTab === "learning" ? "Siswa" : "Pengajar"}</strong>
-                </p>
-              </div>
+        {/* Error */}
+        {error && !loading && (
+          <div className="bg-yellow-50 border border-yellow-100 text-yellow-700 px-4 py-3 rounded-xl text-sm mb-4 flex items-center gap-2">
+            <span>⚠️</span> {error}
+          </div>
+        )}
+
+        {!loading && (
+          <>
+            {/* Tabs */}
+            <div className="bg-white rounded-xl shadow-sm flex mb-8 overflow-hidden">
               <button
-                onClick={() => setShowEnrollModal(false)}
-                className="enroll-modal-close"
-                id="enroll-modal-close"
+                onClick={() => setActiveTab("learning")}
+                className={'tab flex-1 text-center py-4 text-sm sm:text-base ' + (activeTab === "learning" ? "active" : "")}
               >
-                ✕
+                <span className="text-lg mr-2">📖</span>
+                Sedang Dipelajari
+                <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                  {enrolledCourses.filter((c) => c.category === "learning").length}
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveTab("teaching")}
+                className={'tab flex-1 text-center py-4 text-sm sm:text-base ' + (activeTab === "teaching" ? "active" : "")}
+              >
+                <span className="text-lg mr-2">🎓</span>
+                Sedang Diajar
+                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                  {enrolledCourses.filter((c) => c.category === "teaching").length}
+                </span>
               </button>
             </div>
 
-            {/* Input */}
-            <div className="enroll-modal-body">
-              <label className="enroll-modal-label">Kode Mata Pelajaran</label>
-              <div className="enroll-modal-input-wrap">
-                <span className="enroll-modal-input-icon">🔍</span>
+            {/* Empty state */}
+            {displayedCourses.length === 0 ? (
+              <div className="content-card text-center py-16">
+                <div className="text-6xl mb-4">📭</div>
+                <h3 className="text-xl font-bold text-gray-700 mb-2">Belum ada kursus</h3>
+                <p className="text-gray-500 mb-6">
+                  {activeTab === "learning"
+                    ? "Kamu belum mendaftar ke mata pelajaran manapun. Klik tombol Enroll untuk mulai!"
+                    : "Kamu belum terdaftar sebagai pengajar. Klik tombol Enroll untuk mulai mengajar!"}
+                </p>
+                <button
+                  onClick={() => { setShowEnrollModal(true); setEnrollCode(""); }}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl font-semibold hover:shadow-lg hover:-translate-y-0.5 transition-all"
+                >
+                  ➕ Enroll Kursus
+                </button>
+              </div>
+            ) : (
+              /* Table */
+              <div className="content-card overflow-x-auto">
+                <table className="course-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "50px" }}>No</th>
+                      <th style={{ width: "100px" }}>Kode</th>
+                      <th>Nama Mata Pelajaran</th>
+                      <th>Fakultas</th>
+                      <th>Daftar Pengajar</th>
+                      <th style={{ width: "100px" }}>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedCourses.map((course, idx) => (
+                      <tr key={course.courseCode + '-' + course.category}>
+                        <td className="font-mono text-sm text-gray-400">
+                          {String(idx + 1).padStart(2, "0")}
+                        </td>
+                        <td>
+                          <span className="inline-flex px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg font-mono font-bold text-xs border border-indigo-100">
+                            {course.courseCode}
+                          </span>
+                        </td>
+                        <td className="font-semibold text-gray-800">
+                          {course.courseName}
+                        </td>
+                        <td>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 rounded-full text-xs font-medium text-gray-600">
+                            🏛 {course.faculty}
+                          </span>
+                        </td>
+                        <td>
+                          {course.lecturers && course.lecturers.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {course.lecturers.map((lec, i) => (
+                                <span key={i} className="badge badge-lecturer">{lec}</span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">Belum ada pengajar</span>
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            onClick={() => {
+                              setSelectedCourse({ ...course });
+                              setCurrentPage("courseDetail");
+                            }}
+                            className="btn-view"
+                          >
+                            Lihat →
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Enroll Modal */}
+        {showEnrollModal && (
+          <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
+            <div className="modal-content max-w-md" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-2xl font-bold text-gray-800 mb-2">➕ Enroll Kursus</h3>
+              <p className="text-gray-500 mb-6">
+                Masukkan kode mata pelajaran untuk mendaftar sebagai{" "}
+                <strong>{activeTab === "learning" ? "Siswa" : "Pengajar"}</strong>.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Kode Mata Pelajaran
+                </label>
                 <input
                   type="text"
                   value={enrollCode}
                   onChange={(e) => setEnrollCode(e.target.value.toUpperCase())}
                   onKeyDown={(e) => e.key === "Enter" && handleEnroll()}
                   placeholder="Contoh: MAT-XII"
-                  className="enroll-modal-input"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-lg font-mono text-center tracking-widest focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all"
                   autoFocus
-                  id="enroll-code-input"
                 />
               </div>
 
               {enrollError && (
-                <div className="enroll-alert enroll-alert-error">⚠️ {enrollError}</div>
+                <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm mb-4 flex items-center gap-2">
+                  <span>❌</span> {enrollError}
+                </div>
               )}
               {enrollSuccess && (
-                <div className="enroll-alert enroll-alert-success">✅ {enrollSuccess}</div>
+                <div className="bg-green-50 border border-green-100 text-green-600 px-4 py-3 rounded-xl text-sm mb-4 flex items-center gap-2">
+                  <span>✅</span> {enrollSuccess}
+                </div>
               )}
 
-              <button
-                onClick={handleEnroll}
-                className="enroll-modal-submit"
-                id="enroll-submit-btn"
-              >
-                Daftar Sekarang
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleEnroll}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl font-semibold hover:shadow-lg hover:-translate-y-0.5 transition-all"
+                >
+                  Daftar Sekarang
+                </button>
+                <button
+                  onClick={() => setShowEnrollModal(false)}
+                  className="px-6 py-3 bg-gray-100 text-gray-600 rounded-xl font-semibold hover:bg-gray-200 transition-all"
+                >
+                  Batal
+                </button>
+              </div>
 
-              {/* Quick codes */}
-              <div className="enroll-quick">
-                <p className="enroll-quick-label">Kode cepat:</p>
-                <div className="enroll-quick-codes">
-                  {courses.slice(0, 12).map((c) => (
+              {/* Quick code reference */}
+              <div className="mt-6 p-4 bg-gray-50 rounded-xl">
+                <p className="text-xs font-semibold text-gray-500 mb-2">KODE CEPAT:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {allCourses.slice(0, 10).map((c) => (
                     <button
                       key={c.id}
                       onClick={() => setEnrollCode(c.courseCode)}
-                      className={`enroll-quick-code ${enrollCode === c.courseCode ? "enroll-quick-code-active" : ""}`}
+                      className="px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs font-mono text-gray-600 hover:border-purple-400 hover:text-purple-700 transition-all"
                     >
                       {c.courseCode}
                     </button>
@@ -241,8 +298,8 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role }) 
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
