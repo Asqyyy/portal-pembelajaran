@@ -149,12 +149,17 @@ function ExpandableSection({ section, content, isOpen, onToggle, role, onSave, c
           )}
 
           {filesError && <p className="text-xs text-red-500 mb-2">{filesError}</p>}
-          {filesLoading && <p className="text-xs text-gray-400">Loading files...</p>}
+          {filesLoading && (
+            <div className="space-y-2">
+              <div className="skeleton h-10 w-full" />
+              <div className="skeleton h-10 w-3/4" />
+            </div>
+          )}
 
-          {files.length > 0 ? (
+          {!filesLoading && files.length > 0 ? (
             <div className="space-y-2">
               {files.map((f) => (
-                <div key={f.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-2.5">
+                <div key={f.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-2.5 hover:border-gray-300 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-xl">{f.type?.includes("image") ? "🖼️" : f.type?.includes("pdf") ? "📕" : "📄"}</span>
                     <div className="min-w-0">
@@ -179,7 +184,7 @@ function ExpandableSection({ section, content, isOpen, onToggle, role, onSave, c
                 </div>
               ))}
             </div>
-          ) : (
+          ) : !filesLoading && (
             <p className="text-xs text-gray-400">Belum ada file di bagian ini.</p>
           )}
         </div>
@@ -261,7 +266,13 @@ function AssignmentSection({ courseId, role }) {
 
   const now = new Date();
 
-  if (loading) return <p className="text-sm text-gray-400">Loading assignments...</p>;
+  if (loading) return (
+    <div className="mt-6 space-y-3">
+      <div className="skeleton h-6 w-40" />
+      <div className="skeleton h-24 w-full" />
+      <div className="skeleton h-24 w-full" />
+    </div>
+  );
 
   return (
     <div className="mt-6">
@@ -278,7 +289,7 @@ function AssignmentSection({ courseId, role }) {
       </div>
 
       {showForm && (
-        <div className="bg-indigo-50 rounded-xl p-4 mb-4">
+        <div className="bg-indigo-50 rounded-xl p-4 mb-4 border border-indigo-100">
           <input
             type="text"
             placeholder="Judul tugas..."
@@ -315,14 +326,17 @@ function AssignmentSection({ courseId, role }) {
       )}
 
       {assignments.length === 0 ? (
-        <p className="text-sm text-gray-400 italic">Belum ada tugas.</p>
+        <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+          <span className="text-3xl block mb-2">📋</span>
+          <p className="text-sm text-gray-400">Belum ada tugas untuk kursus ini.</p>
+        </div>
       ) : (
         <div className="space-y-4">
           {assignments.map((a) => {
             const deadlineDate = new Date(a.deadline);
             const isOverdue = deadlineDate < now;
             return (
-              <div key={a.id} className="bg-white border border-gray-200 rounded-xl p-4">
+              <div key={a.id} className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-sm transition-shadow">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h4 className="font-semibold text-gray-800">{a.title}</h4>
@@ -399,7 +413,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
     return initial;
   });
   const [details, setDetails] = useState({});
-  const [lecturers, setLecturers] = useState([]);
+  const [allLecturers, setAllLecturers] = useState([]);
   const [showAddLecturer, setShowAddLecturer] = useState(false);
   const [newLecturerName, setNewLecturerName] = useState("");
 
@@ -415,7 +429,12 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
           sections[s.key] = data.sections?.[s.key]?.content || data[s.key] || "";
         });
         setDetails(sections);
-        setLecturers(data.lecturers || course?.lecturers || []);
+
+        // Merge lecturers: API data takes precedence, deduplicate
+        const apiLecturers = data.lecturers || [];
+        const courseLecturers = course?.lecturers || [];
+        const merged = [...new Set([...apiLecturers, ...courseLecturers])];
+        setAllLecturers(merged);
       })
       .catch((err) => {
         setError("Gagal memuat data kursus. Menggunakan data lokal.");
@@ -426,10 +445,10 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
         } catch {}
         try {
           const savedLec = JSON.parse(localStorage.getItem('lecturers_' + courseId) || "[]");
-          if (savedLec.length > 0) setLecturers(savedLec);
-          else setLecturers(course?.lecturers || []);
+          if (savedLec.length > 0) setAllLecturers(savedLec);
+          else setAllLecturers(course?.lecturers || []);
         } catch {
-          setLecturers(course?.lecturers || []);
+          setAllLecturers(course?.lecturers || []);
         }
       })
       .finally(() => setLoading(false));
@@ -451,8 +470,8 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
 
   const handleAddLecturer = () => {
     if (newLecturerName.trim()) {
-      const updated = [...lecturers, newLecturerName.trim()];
-      setLecturers(updated);
+      const updated = [...allLecturers, newLecturerName.trim()];
+      setAllLecturers(updated);
       setNewLecturerName("");
       setShowAddLecturer(false);
       api.updateCourse(courseId, { lecturers: updated }).catch(() => {
@@ -461,12 +480,20 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
     }
   };
 
+  const handleRemoveLecturer = (index) => {
+    const updated = allLecturers.filter((_, i) => i !== index);
+    setAllLecturers(updated);
+    api.updateCourse(courseId, { lecturers: updated }).catch(() => {
+      localStorage.setItem('lecturers_' + courseId, JSON.stringify(updated));
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f0f4f8]">
-        <div className="text-center">
-          <div className="text-4xl mb-4">⏳</div>
-          <p className="text-gray-500">Loading...</p>
+        <div className="text-center page-enter">
+          <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-500 font-medium">Memuat detail kursus...</p>
         </div>
       </div>
     );
@@ -475,10 +502,10 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f0f4f8]">
-        <div className="text-center max-w-md">
-          <div className="text-4xl mb-4">⚠️</div>
-          <p className="text-red-500 mb-4">Error: {error}</p>
-          <button onClick={() => setCurrentPage("courses")} className="px-6 py-3 bg-purple-500 text-white rounded-xl">
+        <div className="text-center max-w-md page-enter">
+          <div className="text-5xl mb-4">⚠️</div>
+          <p className="text-red-500 mb-4">{error}</p>
+          <button onClick={() => setCurrentPage("courses")} className="px-6 py-3 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 transition-colors">
             ← Kembali ke Kursus Saya
           </button>
         </div>
@@ -488,8 +515,15 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
 
   if (!course) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Mata pelajaran tidak ditemukan</p>
+      <div className="min-h-screen flex items-center justify-center bg-[#f0f4f8]">
+        <div className="text-center page-enter">
+          <div className="text-5xl mb-4">📭</div>
+          <h3 className="text-xl font-bold text-gray-700 mb-2">Kursus Tidak Ditemukan</h3>
+          <p className="text-gray-500 mb-4">Mata pelajaran yang kamu cari tidak tersedia.</p>
+          <button onClick={() => setCurrentPage("courses")} className="px-6 py-3 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 transition-colors">
+            ← Kembali ke Kursus Saya
+          </button>
+        </div>
       </div>
     );
   }
@@ -498,7 +532,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
     <div className="min-h-screen bg-[#f0f4f8]">
       {/* Header */}
       <div
-        className="relative py-16 px-6"
+        className="relative py-12 sm:py-16 px-4 sm:px-6"
         style={{ background: "linear-gradient(135deg, #1e3a5f 0%, #2d1b69 100%)" }}
       >
         <div className="max-w-5xl mx-auto">
@@ -515,7 +549,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
                   {course.courseCode}
                 </span>
               </div>
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3">
                 {course.courseName}
               </h2>
               <div className="flex flex-wrap gap-3 items-center">
@@ -525,8 +559,8 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
               </div>
             </div>
             <div className="flex gap-2 items-center flex-wrap">
-              {[...(course.lecturers || []), ...lecturers].length > 0 ? (
-                [...(course.lecturers || []), ...lecturers].map((lec, i) => (
+              {allLecturers.length > 0 ? (
+                allLecturers.map((lec, i) => (
                   <span key={i} className="badge bg-purple-400/20 text-purple-200 border border-purple-400/30">
                     👨🏫 {lec}
                   </span>
@@ -540,55 +574,51 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
       </div>
 
       {/* Role indicator + Add Lecturer */}
-      <div className="max-w-5xl mx-auto px-6 -mt-4">
-        <div className="bg-white rounded-xl px-6 py-3 shadow-sm flex items-center gap-3 mb-6 flex-wrap">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 -mt-4">
+        <div className="bg-white rounded-xl px-4 sm:px-6 py-3 shadow-sm flex items-center gap-3 mb-6 flex-wrap">
           <span className="text-sm text-gray-500">Melihat sebagai:</span>
           <span className={'badge ' + (role === "lecturer" ? "badge-lecturer" : "badge-student")}>
             {role === "lecturer" ? "👨🏫 Pengajar (Dapat Mengedit)" : "👨🎓 Siswa (Hanya Melihat)"}
           </span>
 
           {role === "lecturer" && (
-            <button
-              onClick={() => setShowAddLecturer(!showAddLecturer)}
-              className="ml-auto px-4 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors"
-            >
-              ➕ Tambah Pengajar
-            </button>
-          )}
+            <>
+              <button
+                onClick={() => setShowAddLecturer(!showAddLecturer)}
+                className="ml-auto px-4 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors"
+              >
+                ➕ Tambah Pengajar
+              </button>
 
-          {role === "lecturer" && lecturers.map((lec, i) => (
-            <button
-              key={i}
-              onClick={() => {
-                const updated = lecturers.filter((_, j) => j !== i);
-                setLecturers(updated);
-                api.updateCourse(courseId, { lecturers: updated }).catch(() => {
-                  localStorage.setItem('lecturers_' + courseId, JSON.stringify(updated));
-                });
-              }}
-              className="text-xs text-red-400 hover:text-red-600 ml-1"
-              title="Hapus pengajar"
-            >
-              ✕
-            </button>
-          ))}
+              {allLecturers.map((lec, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleRemoveLecturer(i)}
+                  className="text-xs text-red-400 hover:text-red-600 ml-1 transition-colors"
+                  title="Hapus pengajar"
+                >
+                  ✕
+                </button>
+              ))}
+            </>
+          )}
         </div>
 
         {showAddLecturer && (
-          <div className="bg-white rounded-xl px-6 py-4 shadow-sm mb-6 flex items-center gap-3">
+          <div className="bg-white rounded-xl px-4 sm:px-6 py-4 shadow-sm mb-6 flex items-center gap-3 flex-wrap">
             <input
               type="text"
               value={newLecturerName}
               onChange={(e) => setNewLecturerName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddLecturer()}
               placeholder="Nama lengkap pengajar..."
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-purple-500"
+              className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all"
               autoFocus
             />
-            <button onClick={handleAddLecturer} className="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm font-medium hover:bg-purple-600">
+            <button onClick={handleAddLecturer} className="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm font-medium hover:bg-purple-600 transition-colors">
               Tambah
             </button>
-            <button onClick={() => setShowAddLecturer(false)} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm">
+            <button onClick={() => setShowAddLecturer(false)} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200 transition-colors">
               Batal
             </button>
           </div>
@@ -596,7 +626,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
       </div>
 
       {/* Sections */}
-      <div className="max-w-5xl mx-auto px-6 pb-12">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-12">
         {sectionTemplates.map((section) => (
           <ExpandableSection
             key={section.key}
