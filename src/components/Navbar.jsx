@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function Navbar({ currentPage, setCurrentPage, role, setRole, user, onLogout }) {
+export default function Navbar({ currentPage, setCurrentPage, role, user, onLogout }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -17,7 +17,7 @@ export default function Navbar({ currentPage, setCurrentPage, role, setRole, use
           className="flex items-center gap-3 cursor-pointer flex-shrink-0"
           onClick={() => { setCurrentPage("dashboard"); setMobileOpen(false); }}
         >
-          <span className="text-2xl">🎓</span>
+          <img src="/logo.png" alt="Portal Pembelajaran Logo" className="w-8 h-8 md:w-10 md:h-10 drop-shadow-md" />
           <span className="text-lg md:text-xl font-bold text-white tracking-tight">
             Portal<span className="text-purple-300">Pembelajaran</span>
           </span>
@@ -77,14 +77,11 @@ export default function Navbar({ currentPage, setCurrentPage, role, setRole, use
 
         {/* Right section */}
         <div className="hidden md:flex items-center gap-3">
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-purple-400 transition-all"
-          >
-            <option value="student" className="bg-gray-800 text-white">👨‍🎓 Siswa</option>
-            <option value="lecturer" className="bg-gray-800 text-white">👨‍🏫 Pengajar</option>
-          </select>
+          {user && (
+            <span className="bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-2 flex items-center gap-2">
+              {role === "lecturer" ? "👨‍🏫 Pengajar" : "👨‍🎓 Siswa"}
+            </span>
+          )}
 
           {user ? (
             <div className="flex items-center gap-2">
@@ -154,14 +151,11 @@ export default function Navbar({ currentPage, setCurrentPage, role, setRole, use
 
             <hr className="border-white/10" />
 
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="w-full bg-white/10 border border-white/20 text-white text-sm rounded-lg px-4 py-2.5 focus:outline-none focus:border-purple-400"
-            >
-              <option value="student" className="bg-gray-800">👨‍🎓 Siswa</option>
-              <option value="lecturer" className="bg-gray-800">👨‍🏫 Pengajar</option>
-            </select>
+            {user && (
+              <div className="w-full bg-white/10 border border-white/20 text-white text-sm rounded-lg px-4 py-2.5 flex items-center gap-2">
+                {role === "lecturer" ? "👨‍🏫 Pengajar" : "👨‍🎓 Siswa"}
+              </div>
+            )}
 
             {user ? (
               <button

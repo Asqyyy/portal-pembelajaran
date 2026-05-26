@@ -1,4 +1,4 @@
-export default function Dashboard({ setCurrentPage, role, user, setRole, onLogout }) {
+export default function Dashboard({ setCurrentPage, role, user, onLogout }) {
   const icons = ["📐", "🔬", "📖", "💡", "🧬", "🌍", "🧮", "🎯", "📏", "⚛️", "📚", "🏛️"];
 
   return (
@@ -39,14 +39,9 @@ export default function Dashboard({ setCurrentPage, role, user, setRole, onLogou
 
             {/* Role indicator */}
             {user ? (
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="bg-white/10 border border-white/20 text-white text-xs sm:text-sm rounded-lg px-2 sm:px-3 py-2 focus:outline-none transition-all"
-              >
-                <option value="student" className="bg-gray-800 text-white">👨‍🎓 Siswa</option>
-                <option value="lecturer" className="bg-gray-800 text-white">👨‍🏫 Pengajar</option>
-              </select>
+              <span className="bg-white/10 border border-white/20 text-white text-xs sm:text-sm rounded-lg px-3 py-2 flex items-center gap-2">
+                {role === "lecturer" ? "👨‍🏫 Pengajar" : "👨‍🎓 Siswa"}
+              </span>
             ) : (
               <button
                 onClick={() => setCurrentPage("login")}
