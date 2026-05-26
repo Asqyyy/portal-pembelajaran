@@ -5,20 +5,23 @@ export default function Login({ onLogin, onSwitchToRegister }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setError("");
     if (!form.username || !form.password) {
       setError("Username dan password harus diisi.");
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      const result = onLogin(form.username, form.password);
+    try {
+      const result = await onLogin(form.username, form.password);
       if (!result.success) {
         setError(result.error);
-        setLoading(false);
       }
-    }, 500);
+    } catch (e) {
+      setError(e.error || e.message || "Login gagal. Periksa koneksi.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
