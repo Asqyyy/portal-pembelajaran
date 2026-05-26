@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import QRCodeLib from "qrcode";
+import { api } from "../api/client";
 
 export default function QRAttendance({ courseCode, role }) {
   const [qrData, setQrData] = useState(null);
   const [qrImage, setQrImage] = useState("");
   const [timeLeft, setTimeLeft] = useState(0);
   const [isActive, setIsActive] = useState(false);
-  const [duration, setDuration] = useState(120); // seconds
+  const [duration, setDuration] = useState(120);
   const [message, setMessage] = useState("");
   const [attendanceRecords, setAttendanceRecords] = useState([]);
-  const canvasRef = useRef(null);
+  const [loading, setLoading] = useState(false);
   const intervalRef = useRef(null);
 
   useEffect(() => {
@@ -17,10 +18,17 @@ export default function QRAttendance({ courseCode, role }) {
     return () => clearInterval(intervalRef.current);
   }, [courseCode]);
 
-  const loadAttendanceRecords = () => {
-    const key = `attendance_${courseCode}`;
-    const records = JSON.parse(localStorage.getItem(key) || "[]");
-    setAttendanceRecords(records);
+  const loadAttendanceRecords = async () => {
+    try {
+      const data = await api.getAttendance(courseCode);
+      setAttendanceRecords(Array.isArray(data) ? data : (data.records || []));
+    } catch {
+      // Fallback to localStorage
+      const key = 'attendance_' + courseCode;
+      try {
+        setAttendanceRecords(JSON.parse(localStorage.getItem(key) || "[]"));
+      } catch { setAttendanceRecords([]); }
+    }
   };
 
   const generateQR = async (data) => {
@@ -55,7 +63,6 @@ export default function QRAttendance({ courseCode, role }) {
     intervalRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          // Regenerate with new token (anti-cheat)
           const newToken = Math.random().toString(36).substring(2, 10);
           const newNow = Date.now();
           const newData = {
@@ -81,51 +88,54 @@ export default function QRAttendance({ courseCode, role }) {
     setTimeLeft(0);
   };
 
-  const handleScan = (e) => {
-    // Student "scans" by clicking — in real app, use camera
+  const handleScan = async () => {
     if (!qrData) return;
+    setLoading(true);
 
-    const result = recordAttendance(courseCode, qrData.token);
-    if (result.success) {
-      setMessage("✅ Absen berhasil! Kehadiran tercatat.");
-      loadAttendanceRecords();
-      setTimeout(() => setMessage(""), 3000);
-    } else {
-      setMessage(`⚠️ ${result.error}`);
+    try {
+      const result = await api.recordAttendance(courseCode, qrData.token);
+      if (result.success !== false) {
+        setMessage("✅ Absen berhasil! Kehadiran tercatat.");
+        await loadAttendanceRecords();
+      } else {
+        setMessage('⚠️ ' + (result.error || 'Gagal absen.'));
+      }
+    } catch (err) {
+      // Fallback: local attendance
+      const key = 'attendance_' + courseCode;
+      const records = JSON.parse(localStorage.getItem(key) || "[]");
+      if (records.find((r) => r.token === qrData.token && r.student === "Kamu")) {
+        setMessage("⚠️ Kamu sudah absen untuk sesi ini.");
+      } else {
+        records.push({
+          student: "Kamu",
+          token: qrData.token,
+          time: new Date().toLocaleString("id-ID"),
+          timestamp: Date.now(),
+        });
+        localStorage.setItem(key, JSON.stringify(records));
+        setAttendanceRecords(records);
+        setMessage("✅ Absen berhasil! (local)");
+      }
+    } finally {
+      setLoading(false);
       setTimeout(() => setMessage(""), 3000);
     }
-  };
-
-  const recordAttendance = (cc, token) => {
-    const key = `attendance_${cc}`;
-    const records = JSON.parse(localStorage.getItem(key) || "[]");
-    if (records.find((r) => r.token === token && r.student === "Kamu")) {
-      return { success: false, error: "Kamu sudah absen untuk sesi ini." };
-    }
-    records.push({
-      student: "Kamu",
-      token,
-      time: new Date().toLocaleString("id-ID"),
-      timestamp: Date.now(),
-    });
-    localStorage.setItem(key, JSON.stringify(records));
-    return { success: true };
   };
 
   const clearRecords = () => {
-    localStorage.removeItem(`attendance_${courseCode}`);
+    localStorage.removeItem('attendance_' + courseCode);
     setAttendanceRecords([]);
   };
 
   const formatTime = (secs) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
+    return m + ':' + String(s).padStart(2, "0");
   };
 
   return (
     <div>
-      {/* Lecturer controls */}
       {role === "lecturer" && (
         <div className="bg-indigo-50 rounded-xl p-6 mb-6">
           <h4 className="font-bold text-indigo-800 text-lg mb-3">📱 QR Code Absensi</h4>
@@ -184,7 +194,6 @@ export default function QRAttendance({ courseCode, role }) {
         </div>
       )}
 
-      {/* Student scanning */}
       {role === "student" && isActive && (
         <div className="bg-blue-50 rounded-xl p-6 mb-6 text-center">
           <h4 className="font-bold text-blue-800 text-lg mb-3">📱 Absensi QR</h4>
@@ -199,16 +208,17 @@ export default function QRAttendance({ courseCode, role }) {
           <div>
             <button
               onClick={handleScan}
-              className="px-6 py-3 bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-600 transition-colors"
+              disabled={loading}
+              className="px-6 py-3 bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-600 transition-colors disabled:opacity-50"
             >
-              📸 Scan / Tap untuk Absen
+              {loading ? "⏳ Memproses..." : "📸 Scan / Tap untuk Absen"}
             </button>
             <p className="text-xs text-gray-400 mt-2">QR berganti otomatis — pastikan scan QR terbaru</p>
           </div>
           {message && (
-            <div className={`mt-4 px-4 py-2 rounded-lg text-sm font-medium ${
+            <div className={'mt-4 px-4 py-2 rounded-lg text-sm font-medium ' + (
               message.includes("berhasil") ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-            }`}>
+            )}>
               {message}
             </div>
           )}
@@ -222,7 +232,6 @@ export default function QRAttendance({ courseCode, role }) {
         </div>
       )}
 
-      {/* Attendance records */}
       {attendanceRecords.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-3">
