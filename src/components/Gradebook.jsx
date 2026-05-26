@@ -1,52 +1,83 @@
 import { useState, useEffect } from "react";
+import { api } from "../api/client";
 
 export default function Gradebook({ courseId, role }) {
-  const [components, setComponents] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(`gradebook_${courseId}`) || "[]"); }
-    catch { return []; }
-  });
-  const [studentScores, setStudentScores] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(`grades_${courseId}`) || "{}"); }
-    catch { return {}; }
-  });
+  const [components, setComponents] = useState([]);
+  const [studentScores, setStudentScores] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showAddComponent, setShowAddComponent] = useState(false);
   const [newComponent, setNewComponent] = useState({ name: "", weight: 0, maxScore: 100 });
   const [editScores, setEditScores] = useState(false);
   const [studentName, setStudentName] = useState("");
   const [showAddStudent, setShowAddStudent] = useState(false);
 
+  // Load gradebook from API
   useEffect(() => {
-    localStorage.setItem(`gradebook_${courseId}`, JSON.stringify(components));
+    setLoading(true);
+    setError("");
+    api.getGradebook(courseId)
+      .then((data) => {
+        setComponents(Array.isArray(data.components) ? data.components : (data.components || []));
+        setStudentScores(data.scores || data.studentScores || {});
+      })
+      .catch(() => {
+        setError("Gagal memuat gradebook.");
+        // Fallback to localStorage
+        try {
+          setComponents(JSON.parse(localStorage.getItem('gradebook_' + courseId) || "[]"));
+        } catch {}
+        try {
+          setStudentScores(JSON.parse(localStorage.getItem('grades_' + courseId) || "{}"));
+        } catch {}
+      })
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  // Cache in localStorage
+  useEffect(() => {
+    if (components.length > 0) {
+      localStorage.setItem('gradebook_' + courseId, JSON.stringify(components));
+    }
   }, [components, courseId]);
 
   useEffect(() => {
-    localStorage.setItem(`grades_${courseId}`, JSON.stringify(studentScores));
+    if (Object.keys(studentScores).length > 0) {
+      localStorage.setItem('grades_' + courseId, JSON.stringify(studentScores));
+    }
   }, [studentScores, courseId]);
 
-  const addComponent = () => {
+  const addComponent = async () => {
     if (!newComponent.name.trim() || newComponent.weight <= 0) return;
-    setComponents(prev => [...prev, { ...newComponent, id: Date.now() }]);
+    const compData = { ...newComponent, id: Date.now(), courseId };
+    setComponents(prev => [...prev, compData]);
     setNewComponent({ name: "", weight: 0, maxScore: 100 });
     setShowAddComponent(false);
+
+    try { await api.addGradeComponent(compData); } catch {}
   };
 
   const removeComponent = (compId) => {
     setComponents(prev => prev.filter(c => c.id !== compId));
+    try { api.removeGradeComponent(compId); } catch {}
   };
 
-  const updateScore = (student, componentId, score) => {
+  const updateScore = async (student, componentId, score) => {
+    const maxScore = components.find(c => c.id === componentId)?.maxScore || 100;
+    const newScore = Math.min(Number(score), maxScore);
     setStudentScores(prev => ({
       ...prev,
-      [student]: {
-        ...(prev[student] || {}),
-        [componentId]: Math.min(Number(score), components.find(c => c.id === componentId)?.maxScore || 100)
-      }
+      [student]: { ...(prev[student] || {}), [componentId]: newScore }
     }));
+
+    try {
+      await api.updateGrade({ courseId, student, componentId, score: newScore });
+    } catch {}
   };
 
   const addStudent = () => {
     if (!studentName.trim()) return;
-    if (studentScores[studentName]) return; // already exists
+    if (studentScores[studentName]) return;
     setStudentScores(prev => ({ ...prev, [studentName]: {} }));
     setStudentName("");
     setShowAddStudent(false);
@@ -91,26 +122,33 @@ export default function Gradebook({ courseId, role }) {
     const students = Object.keys(studentScores);
     if (students.length === 0) return;
     let csv = "Nama";
-    components.forEach(c => { csv += `,${c.name} (${c.weight}%)`; });
+    components.forEach(c => { csv += ',' + c.name + ' (' + c.weight + '%)'; });
     csv += ",Nilai Akhir,Huruf\n";
     students.forEach(name => {
       const final = calculateFinalGrade(name);
       csv += name;
-      components.forEach(c => { csv += `,${studentScores[name]?.[c.id] || "-"}`; });
-      csv += `,${final},${getLetterGrade(final)}\n`;
+      components.forEach(c => { csv += ',' + (studentScores[name]?.[c.id] || "-"); });
+      csv += ',' + final + ',' + getLetterGrade(final) + '\n';
     });
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `nilai_course_${courseId}.csv`; a.click();
+    a.href = url; a.download = 'nilai_course_' + courseId + '.csv'; a.click();
   };
 
   const students = Object.keys(studentScores);
   const totalWeight = components.reduce((s, c) => s + c.weight, 0);
 
+  if (loading) {
+    return <div className="text-center py-12"><span className="text-gray-400">Loading gradebook...</span></div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-12"><span className="text-red-400">Error: {error}</span></div>;
+  }
+
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h3 className="text-lg font-bold text-gray-800">📊 Gradebook</h3>
@@ -133,9 +171,9 @@ export default function Gradebook({ courseId, role }) {
                 ➕ Komponen
               </button>
               <button onClick={() => setEditScores(!editScores)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                className={'px-4 py-2 rounded-xl text-sm font-semibold transition-colors ' + (
                   editScores ? "bg-amber-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}>
+                )}>
                 {editScores ? "🔒 Selesai Edit" : "✏️ Edit Nilai"}
               </button>
               <button onClick={exportCSV}
@@ -147,7 +185,6 @@ export default function Gradebook({ courseId, role }) {
         </div>
       </div>
 
-      {/* Add Student */}
       {showAddStudent && (
         <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
           <div className="flex items-center gap-3">
@@ -161,7 +198,6 @@ export default function Gradebook({ courseId, role }) {
         </div>
       )}
 
-      {/* Add Component */}
       {showAddComponent && (
         <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
           <h4 className="font-semibold text-gray-700 text-sm mb-3">Komponen Penilaian Baru</h4>
@@ -189,7 +225,6 @@ export default function Gradebook({ courseId, role }) {
         </div>
       )}
 
-      {/* Grade Table */}
       {students.length === 0 ? (
         <div className="text-center py-12 bg-gray-50 rounded-2xl">
           <span className="text-5xl">📊</span>
@@ -237,11 +272,11 @@ export default function Gradebook({ courseId, role }) {
                             className="w-16 px-2 py-1 border border-gray-200 rounded-lg text-sm text-center focus:outline-none focus:border-indigo-400"
                             placeholder="-" />
                         ) : (
-                          <span className={`text-sm font-medium ${
+                          <span className={'text-sm font-medium ' + (
                             (studentScores[name]?.[comp.id] ?? -1) >= comp.maxScore * 0.7 ? "text-green-600" :
                             (studentScores[name]?.[comp.id] ?? -1) >= comp.maxScore * 0.5 ? "text-amber-600" :
                             (studentScores[name]?.[comp.id] ?? -1) >= 0 ? "text-red-600" : "text-gray-300"
-                          }`}>
+                          )}>
                             {studentScores[name]?.[comp.id] ?? "-"}
                           </span>
                         )}
@@ -250,7 +285,7 @@ export default function Gradebook({ courseId, role }) {
                     ))}
                     <td className="text-center bg-purple-50/50">
                       <span className="font-bold text-gray-800">{final === "-" ? "-" : final}</span>
-                      <span className={`ml-1 text-xs font-bold ${letterColor}`}>{letter}</span>
+                      <span className={'ml-1 text-xs font-bold ' + letterColor}>{letter}</span>
                     </td>
                     {role === "lecturer" && editScores && (
                       <td>
@@ -265,7 +300,6 @@ export default function Gradebook({ courseId, role }) {
         </div>
       )}
 
-      {/* Stats for lecturer */}
       {role === "lecturer" && students.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           {[
@@ -283,22 +317,21 @@ export default function Gradebook({ courseId, role }) {
             })(), icon: "📉", color: "red" },
             { label: "Tuntas (≥65)", value: (() => {
               const passed = students.filter(s => parseFloat(calculateFinalGrade(s)) >= 65).length;
-              return `${passed}/${students.length} (${Math.round(passed / students.length * 100)}%)`;
+              return passed + '/' + students.length + ' (' + Math.round(passed / students.length * 100) + '%)';
             })(), icon: "✅", color: "purple" },
           ].map((stat, i) => (
             <div key={i} className="bg-white border border-gray-200 rounded-2xl p-4 text-center">
               <span className="text-2xl">{stat.icon}</span>
-              <div className={`text-2xl font-bold mt-1 ${
+              <div className={'text-2xl font-bold mt-1 ' + (
                 stat.color === "blue" ? "text-blue-600" : stat.color === "green" ? "text-green-600" :
                 stat.color === "red" ? "text-red-600" : "text-purple-600"
-              }`}>{stat.value}</div>
+              )}>{stat.value}</div>
               <div className="text-xs text-gray-500 mt-0.5">{stat.label}</div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Student view: only show own grades */}
       {role === "student" && students.length > 0 && (
         <div className="bg-blue-50 rounded-2xl p-5 mt-6 text-center">
           <span className="text-3xl">📊</span>
