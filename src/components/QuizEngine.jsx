@@ -1,45 +1,74 @@
 import { useState, useEffect } from "react";
+import { api } from "../api/client";
+
+const COURSE_ID_KEY_PREFIX = "quizzes_";
 
 export default function QuizEngine({ courseId, role }) {
-  const [quizzes, setQuizzes] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(`quizzes_${courseId}`) || "[]"); }
-    catch { return []; }
-  });
+  const [quizzes, setQuizzes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showBuilder, setShowBuilder] = useState(false);
-  const [activeQuiz, setActiveQuiz] = useState(null); // taking or reviewing
+  const [activeQuiz, setActiveQuiz] = useState(null);
   const [userAnswers, setUserAnswers] = useState({});
   const [quizResult, setQuizResult] = useState(null);
   const [editingQuiz, setEditingQuiz] = useState(null);
+  const [resultsCache, setResultsCache] = useState({});
 
   // Quiz builder state
   const [newQuiz, setNewQuiz] = useState({
-    title: "", description: "", duration: 30, // minutes
+    title: "", description: "", duration: 30,
     questions: []
   });
   const [newQuestion, setNewQuestion] = useState({
-    type: "multiple", // multiple | essay | truefalse
+    type: "multiple",
     text: "",
     options: ["", "", "", ""],
     correctAnswer: "",
     points: 10
   });
 
+  // Fetch quizzes from API
   useEffect(() => {
-    localStorage.setItem(`quizzes_${courseId}`, JSON.stringify(quizzes));
+    setLoading(true);
+    setError("");
+    api.getQuizByCourse(courseId)
+      .then((data) => {
+        setQuizzes(Array.isArray(data) ? data : (data.quizzes || []));
+      })
+      .catch((err) => {
+        setError("Gagal memuat kuis.");
+        // Fallback to localStorage
+        try {
+          const cached = JSON.parse(localStorage.getItem(COURSE_ID_KEY_PREFIX + courseId) || "[]");
+          if (cached.length > 0) setQuizzes(cached);
+        } catch {}
+      })
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  // Also load results
+  useEffect(() => {
+    api.getQuizResults(courseId)
+      .then((data) => {
+        const results = {};
+        (Array.isArray(data) ? data : (data.results || [])).forEach((r) => {
+          results[r.quizId || r.id] = r;
+        });
+        setResultsCache(results);
+      })
+      .catch(() => {
+        try {
+          setResultsCache(JSON.parse(localStorage.getItem('quiz_results_' + courseId) || "{}"));
+        } catch {}
+      });
+  }, [courseId]);
+
+  // Cache quizzes in localStorage as fallback
+  useEffect(() => {
+    if (quizzes.length > 0) {
+      localStorage.setItem(COURSE_ID_KEY_PREFIX + courseId, JSON.stringify(quizzes));
+    }
   }, [quizzes, courseId]);
-
-  // Save quiz results
-  const saveResult = (quizId, score, total, answers) => {
-    const key = `quiz_results_${courseId}`;
-    const results = JSON.parse(localStorage.getItem(key) || "{}");
-    results[quizId] = { score, total, answers, date: new Date().toLocaleString("id-ID") };
-    localStorage.setItem(key, JSON.stringify(results));
-  };
-
-  const getResults = () => {
-    const key = `quiz_results_${courseId}`;
-    return JSON.parse(localStorage.getItem(key) || "{}");
-  };
 
   // === QUIZ BUILDER ===
   const addQuestion = () => {
@@ -58,14 +87,32 @@ export default function QuizEngine({ courseId, role }) {
     }));
   };
 
-  const saveQuiz = () => {
+  const saveQuiz = async () => {
     if (!newQuiz.title || newQuiz.questions.length === 0) return;
+    const quizData = { ...newQuiz, courseId };
+
     if (editingQuiz) {
-      setQuizzes(prev => prev.map(q => q.id === editingQuiz.id ? { ...newQuiz, id: editingQuiz.id } : q));
-      setEditingQuiz(null);
-    } else {
-      setQuizzes(prev => [...prev, { ...newQuiz, id: Date.now(), createdAt: new Date().toLocaleDateString("id-ID") }]);
+      quizData.id = editingQuiz.id;
     }
+
+    try {
+      const saved = await api.createQuiz(quizData);
+      if (editingQuiz) {
+        setQuizzes(prev => prev.map(q => q.id === editingQuiz.id ? { ...saved, id: saved.id || editingQuiz.id } : q));
+        setEditingQuiz(null);
+      } else {
+        setQuizzes(prev => [...prev, { ...saved, id: saved.id || Date.now(), createdAt: new Date().toLocaleDateString("id-ID") }]);
+      }
+    } catch {
+      // Fallback to localStorage
+      if (editingQuiz) {
+        setQuizzes(prev => prev.map(q => q.id === editingQuiz.id ? { ...quizData, id: editingQuiz.id } : q));
+        setEditingQuiz(null);
+      } else {
+        setQuizzes(prev => [...prev, { ...quizData, id: Date.now(), createdAt: new Date().toLocaleDateString("id-ID") }]);
+      }
+    }
+
     setNewQuiz({ title: "", description: "", duration: 30, questions: [] });
     setShowBuilder(false);
   };
@@ -87,7 +134,7 @@ export default function QuizEngine({ courseId, role }) {
     setQuizResult(null);
   };
 
-  const submitQuiz = () => {
+  const submitQuiz = async () => {
     let score = 0;
     let total = 0;
     const answers = {};
@@ -101,10 +148,20 @@ export default function QuizEngine({ courseId, role }) {
       if (q.type === "multiple" || q.type === "truefalse") {
         if (userAns === correctAns) score += q.points;
       }
-      // Essay is manually graded — give 0 for now
     });
     setQuizResult({ score, total, answers, questions, quizTitle: activeQuiz.title });
-    saveResult(activeQuiz.id, score, total, answers);
+
+    // Submit to API
+    try {
+      const result = await api.submitQuiz(activeQuiz.id, { answers, score, total });
+      setResultsCache(prev => ({ ...prev, [activeQuiz.id]: result }));
+    } catch {
+      // Local fallback
+      const key = 'quiz_results_' + courseId;
+      const results = JSON.parse(localStorage.getItem(key) || "{}");
+      results[activeQuiz.id] = { score, total, answers, date: new Date().toLocaleString("id-ID") };
+      localStorage.setItem(key, JSON.stringify(results));
+    }
     setActiveQuiz(null);
   };
 
@@ -119,7 +176,13 @@ export default function QuizEngine({ courseId, role }) {
 
   const percentage = (score, total) => Math.round((score / total) * 100);
 
-  // === VIEWS ===
+  if (loading) {
+    return <div className="text-center py-12"><span className="text-gray-400">Loading quizzes...</span></div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-12"><span className="text-red-400">Error: {error}</span></div>;
+  }
 
   // Quiz Builder Modal
   if (showBuilder) {
@@ -131,7 +194,6 @@ export default function QuizEngine({ courseId, role }) {
           </h3>
           <p className="text-gray-500 text-sm mb-6">Course ID: {courseId}</p>
 
-          {/* Quiz Info */}
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Judul Kuis</label>
@@ -152,11 +214,8 @@ export default function QuizEngine({ courseId, role }) {
               className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm h-20 focus:outline-none focus:border-purple-500" />
           </div>
 
-          {/* Questions List */}
           <div className="mb-4">
-            <h4 className="font-semibold text-gray-700 mb-2">
-              📋 Soal ({newQuiz.questions.length})
-            </h4>
+            <h4 className="font-semibold text-gray-700 mb-2">📋 Soal ({newQuiz.questions.length})</h4>
             {newQuiz.questions.map((q, i) => (
               <div key={q.id} className="bg-gray-50 rounded-xl p-4 mb-2 flex justify-between items-start">
                 <div className="flex-1">
@@ -200,7 +259,7 @@ export default function QuizEngine({ courseId, role }) {
                   <div key={i} className="flex items-center gap-1">
                     <span className="text-xs font-bold text-gray-500 w-5">{String.fromCharCode(65 + i)}.</span>
                     <input type="text" value={opt} onChange={e => setOption(null, i, e.target.value)}
-                      placeholder={`Opsi ${String.fromCharCode(65 + i)}`}
+                      placeholder={'Opsi ' + String.fromCharCode(65 + i)}
                       className="flex-1 px-3 py-1.5 border border-indigo-200 rounded-lg text-sm bg-white focus:outline-none" />
                   </div>
                 ))}
@@ -254,7 +313,7 @@ export default function QuizEngine({ courseId, role }) {
     const pct = percentage(quizResult.score, quizResult.total);
     return (
       <div>
-        <div className={`text-center p-8 rounded-2xl mb-6 ${pct >= 70 ? "bg-green-50" : "bg-red-50"}`}>
+        <div className={'text-center p-8 rounded-2xl mb-6 ' + (pct >= 70 ? "bg-green-50" : "bg-red-50")}>
           <span className="text-6xl">{pct >= 70 ? "🎉" : "📚"}</span>
           <h3 className="text-2xl font-bold text-gray-800 mt-3">
             {pct >= 70 ? "Kerja Bagus!" : "Terus Belajar!"}
@@ -267,17 +326,16 @@ export default function QuizEngine({ courseId, role }) {
             Kembali ke Daftar Kuis
           </button>
         </div>
-        {/* Answer review */}
         <div className="space-y-3">
           {Object.entries(quizResult.answers).map(([qId, ans], i) => {
             const q = quizResult.questions?.find(q => q.id === Number(qId));
             if (!q) return null;
             const isCorrect = ans.user === ans.correct;
             return (
-              <div key={qId} className={`p-4 rounded-xl border ${isCorrect ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+              <div key={qId} className={'p-4 rounded-xl border ' + (isCorrect ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200")}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-semibold">#{i + 1}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${isCorrect ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                  <span className={'text-xs px-2 py-0.5 rounded-full ' + (isCorrect ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
                     {isCorrect ? "✅ Benar" : "❌ Salah"}
                   </span>
                   <span className="text-xs text-gray-400">{q.points} poin</span>
@@ -321,12 +379,12 @@ export default function QuizEngine({ courseId, role }) {
             {q.type === "multiple" && (
               <div className="space-y-2">
                 {q.options.map((opt, oi) => (
-                  <label key={oi} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors border ${
+                  <label key={oi} className={'flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors border ' + (
                     userAnswers[q.id] === String.fromCharCode(97 + oi)
                       ? "border-purple-400 bg-purple-50"
                       : "border-gray-200 hover:bg-gray-50"
-                  }`}>
-                    <input type="radio" name={`q_${q.id}`} value={String.fromCharCode(97 + oi)}
+                  )}>
+                    <input type="radio" name={'q_' + q.id} value={String.fromCharCode(97 + oi)}
                       checked={userAnswers[q.id] === String.fromCharCode(97 + oi)}
                       onChange={e => setUserAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                       className="w-4 h-4 text-purple-600" />
@@ -339,10 +397,10 @@ export default function QuizEngine({ courseId, role }) {
             {q.type === "truefalse" && (
               <div className="flex gap-3">
                 {["true", "false"].map(val => (
-                  <label key={val} className={`flex-1 p-3 rounded-xl text-center cursor-pointer border font-medium transition-colors ${
+                  <label key={val} className={'flex-1 p-3 rounded-xl text-center cursor-pointer border font-medium transition-colors ' + (
                     userAnswers[q.id] === val ? "border-purple-400 bg-purple-50 text-purple-700" : "border-gray-200 hover:bg-gray-50 text-gray-600"
-                  }`}>
-                    <input type="radio" name={`q_${q.id}`} value={val}
+                  )}>
+                    <input type="radio" name={'q_' + q.id} value={val}
                       checked={userAnswers[q.id] === val}
                       onChange={e => setUserAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                       className="hidden" />
@@ -374,10 +432,8 @@ export default function QuizEngine({ courseId, role }) {
   }
 
   // Main Quiz List View
-  const results = getResults();
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-bold text-gray-800">📝 Daftar Kuis</h3>
@@ -401,8 +457,7 @@ export default function QuizEngine({ courseId, role }) {
       ) : (
         <div className="space-y-4">
           {quizzes.map(quiz => {
-            const myResult = results[quiz.id];
-            const allResults = role === "lecturer" ? Object.entries(results).filter(([id]) => Number(id) === quiz.id) : null;
+            const myResult = resultsCache[quiz.id];
             return (
               <div key={quiz.id} className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between gap-4">
@@ -455,7 +510,7 @@ export default function QuizEngine({ courseId, role }) {
         <div className="mt-8 p-5 bg-gray-50 rounded-2xl">
           <h4 className="font-semibold text-gray-700 mb-3">📊 Ringkasan Hasil Kuis</h4>
           {quizzes.map(quiz => {
-            const quizResults = Object.entries(results).filter(([id]) => Number(id) === quiz.id);
+            const quizResults = Object.entries(resultsCache).filter(([id]) => Number(id) === quiz.id);
             return (
               <div key={quiz.id} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0">
                 <span className="text-sm text-gray-600">{quiz.title}</span>
