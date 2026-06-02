@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useAuth } from "./data/auth";
 import Dashboard from "./components/Dashboard";
 import CourseList from "./components/CourseList";
@@ -15,32 +15,11 @@ function Footer() {
   );
 }
 
-export default function App() {
-  const [currentPage, setCurrentPage] = useState("dashboard");
-  const [selectedCourse, setSelectedCourse] = useState(null);
-  const role = user?.role || "student";
+function AppLayout() {
   const { user, loading, login, register, logout, updateUser } = useAuth();
+  const role = user?.role || "student";
 
-  const handleLogin = useCallback(async (username, password) => {
-    const result = await login(username, password);
-    if (result.success) {
-      setCurrentPage("dashboard");
-    }
-    return result;
-  }, [login]);
-
-  const handleRegister = useCallback(async (username, password, email) => {
-    const result = await register(username, password, email);
-    return result;
-  }, [register]);
-
-  const handleLogout = () => {
-    logout();
-    setCurrentPage("dashboard");
-  };
-
-  // Show loading while auth is being validated
-  if (loading && currentPage !== "login" && currentPage !== "register") {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -51,70 +30,37 @@ export default function App() {
     );
   }
 
-  const showNav = currentPage !== "dashboard" && currentPage !== "login" && currentPage !== "register";
-  const isDashboard = currentPage === "dashboard";
-
   return (
-    <div className={isDashboard ? "min-h-screen" : "min-h-screen flex flex-col"}>
-      {/* Navbar for non-dashboard / non-auth pages */}
-      {showNav && (
-        <Navbar
-          currentPage={currentPage}
-          setCurrentPage={setCurrentPage}
-          role={role}
-          user={user}
-          onLogout={handleLogout}
-        />
-      )}
+    <Routes>
+      <Route path="/" element={<Dashboard role={role} user={user} onLogout={logout} />} />
+      <Route path="/login" element={<Login onLogin={login} />} />
+      <Route path="/register" element={<Register onRegister={register} />} />
+      <Route path="/courses" element={
+        <>
+          <Navbar role={role} user={user} onLogout={logout} />
+          <div className="flex-1 page-enter">
+            <CourseList role={role} user={user} />
+          </div>
+          <Footer />
+        </>
+      } />
+      <Route path="/courses/:courseId" element={
+        <>
+          <Navbar role={role} user={user} onLogout={logout} />
+          <div className="flex-1 page-enter">
+            <CourseDetail role={role} user={user} />
+          </div>
+          <Footer />
+        </>
+      } />
+    </Routes>
+  );
+}
 
-      <div className={isDashboard ? "" : "flex-1 page-enter"}>
-        {currentPage === "dashboard" && (
-          <Dashboard
-            setCurrentPage={setCurrentPage}
-            role={role}
-            user={user}
-            onLogout={handleLogout}
-          />
-        )}
-
-        {currentPage === "login" && (
-          <Login
-            onLogin={handleLogin}
-            onSwitchToRegister={() => setCurrentPage("register")}
-          />
-        )}
-
-        {currentPage === "register" && (
-          <Register
-            onRegister={handleRegister}
-            onSwitchToLogin={(username) => {
-              setCurrentPage("login");
-            }}
-          />
-        )}
-
-        {currentPage === "courses" && (
-          <CourseList
-            setCurrentPage={setCurrentPage}
-            setSelectedCourse={setSelectedCourse}
-            role={role}
-            user={user}
-          />
-        )}
-
-        {currentPage === "courseDetail" && selectedCourse && (
-          <CourseDetail
-            courseId={selectedCourse.id}
-            courseCode={selectedCourse.courseCode}
-            setCurrentPage={setCurrentPage}
-            role={role}
-            user={user}
-          />
-        )}
-      </div>
-
-      {/* Footer — show on all pages */}
-      <Footer />
-    </div>
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppLayout />
+    </BrowserRouter>
   );
 }

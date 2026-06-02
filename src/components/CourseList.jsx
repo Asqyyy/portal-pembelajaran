@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { courses as allCourses } from "../data/mockData";
 import { api } from "../api/client";
 
-export default function CourseList({ setCurrentPage, setSelectedCourse, role, user }) {
+export default function CourseList({ role, user }) {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("learning");
   const [enrolledCourses, setEnrolledCourses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -212,10 +214,7 @@ export default function CourseList({ setCurrentPage, setSelectedCourse, role, us
                         </td>
                         <td>
                           <button
-                            onClick={() => {
-                              setSelectedCourse({ ...course });
-                              setCurrentPage("courseDetail");
-                            }}
+                            onClick={() => navigate("/courses/" + course.id)}
                             className="btn-view"
                           >
                             Lihat →

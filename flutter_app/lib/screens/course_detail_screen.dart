@@ -85,7 +85,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
               context,
               MaterialPageRoute(
                 builder: (_) =>
-                    AttendanceScreen(courseId: widget.courseId),
+                    AttendanceScreen(
+                      courseId: widget.courseId,
+                      courseCode: _detail?['course']?['course_code'] ?? 'COURSE-${widget.courseId}',
+                    ),
               ),
             ),
           ),

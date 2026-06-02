@@ -1,4 +1,6 @@
-export default function Dashboard({ setCurrentPage, role, user, onLogout }) {
+import { Link } from "react-router-dom";
+
+export default function Dashboard({ role, user, onLogout }) {
   const icons = ["📐", "🔬", "📖", "💡", "🧬", "🌍", "🧮", "🎯", "📏", "⚛️", "📚", "🏛️"];
 
   return (
@@ -21,18 +23,18 @@ export default function Dashboard({ setCurrentPage, role, user, onLogout }) {
 
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Nav links inside dashboard */}
-            <button
-              onClick={() => setCurrentPage("dashboard")}
+            <Link
+              to="/"
               className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-white/20 text-white transition-all"
             >
               🏠 Beranda
-            </button>
-            <button
-              onClick={() => setCurrentPage("courses")}
+            </Link>
+            <Link
+              to="/courses"
               className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 transition-all"
             >
               📚 Kursus Saya
-            </button>
+            </Link>
 
             {/* Divider */}
             <div className="w-px h-6 bg-white/20 mx-1 hidden sm:block" />
@@ -43,12 +45,12 @@ export default function Dashboard({ setCurrentPage, role, user, onLogout }) {
                 {role === "lecturer" ? "👨‍🏫 Pengajar" : "👨‍🎓 Siswa"}
               </span>
             ) : (
-              <button
-                onClick={() => setCurrentPage("login")}
+              <Link
+                to="/login"
                 className="px-3 sm:px-4 py-2 bg-white/10 backdrop-blur text-white/60 border border-white/20 rounded-lg text-xs sm:text-sm hover:text-white hover:bg-white/20 transition-all flex items-center gap-2"
               >
                 <span>🔐</span> Masuk
-              </button>
+              </Link>
             )}
 
             {user ? (
@@ -90,26 +92,26 @@ export default function Dashboard({ setCurrentPage, role, user, onLogout }) {
             </p>
 
             <div className="flex flex-wrap gap-3 sm:gap-4 justify-center lg:justify-start">
-              <button
-                onClick={() => setCurrentPage("courses")}
+              <Link
+                to="/courses"
                 className="px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-semibold text-base sm:text-lg shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all flex items-center gap-2"
               >
                 <span>📖</span> Jelajahi Kursus
-              </button>
+              </Link>
               {user ? (
-                <button
-                  onClick={() => setCurrentPage("courses")}
+                <Link
+                  to="/courses"
                   className="px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold text-base sm:text-lg shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 hover:-translate-y-0.5 transition-all flex items-center gap-2"
                 >
                   <span>🎓</span> Mulai Mengajar
-                </button>
+                </Link>
               ) : (
-                <button
-                  onClick={() => setCurrentPage("register")}
+                <Link
+                  to="/register"
                   className="px-6 sm:px-8 py-3 sm:py-4 bg-white/5 backdrop-blur text-white/80 border border-white/20 rounded-xl font-semibold text-base sm:text-lg hover:bg-white/10 hover:-translate-y-0.5 transition-all flex items-center gap-2"
                 >
                   <span>📝</span> Daftar untuk Mengajar
-                </button>
+                </Link>
               )}
             </div>
           </div>

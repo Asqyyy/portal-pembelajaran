@@ -23,7 +23,7 @@ export default function QRAttendance({ courseCode, role }) {
       const data = await api.getAttendance(courseCode);
       setAttendanceRecords(Array.isArray(data) ? data : (data.records || []));
     } catch {
-      // Fallback to localStorage
+      // Fallback to localStorage for read
       const key = 'attendance_' + courseCode;
       try {
         setAttendanceRecords(JSON.parse(localStorage.getItem(key) || "[]"));
@@ -44,40 +44,46 @@ export default function QRAttendance({ courseCode, role }) {
     }
   };
 
-  const startQRSession = () => {
-    const token = Math.random().toString(36).substring(2, 10);
-    const now = Date.now();
-    const data = {
-      courseCode,
-      token,
-      generatedAt: now,
-      expiresAt: now + duration * 1000,
-    };
-    setQrData(data);
-    setIsActive(true);
-    setTimeLeft(duration);
-    setMessage("");
-    generateQR(data);
+  // Generate token from backend (server-side) instead of client-side
+  const startQRSession = async () => {
+    try {
+      const session = await api.createAttendanceSession(courseCode, duration);
+      const data = {
+        courseCode,
+        token: session.token,
+        expiresAt: session.expires_at,
+      };
+      setQrData(data);
+      setIsActive(true);
+      setTimeLeft(duration);
+      setMessage("");
+      generateQR(data);
 
-    clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          const newToken = Math.random().toString(36).substring(2, 10);
-          const newNow = Date.now();
-          const newData = {
-            courseCode,
-            token: newToken,
-            generatedAt: newNow,
-            expiresAt: newNow + duration * 1000,
-          };
-          setQrData(newData);
-          generateQR(newData);
-          return duration;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+      clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            // Request new token from backend when timer expires
+            api.createAttendanceSession(courseCode, duration).then((newSession) => {
+              const newData = {
+                courseCode,
+                token: newSession.token,
+                expiresAt: newSession.expires_at,
+              };
+              setQrData(newData);
+              generateQR(newData);
+            }).catch((err) => {
+              console.error("Failed to refresh QR token:", err);
+            });
+            return duration;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      setMessage("⚠️ Gagal memulai sesi: " + (err.error || err.message || "Server error"));
+      setTimeout(() => setMessage(""), 5000);
+    }
   };
 
   const stopQRSession = () => {
@@ -94,29 +100,14 @@ export default function QRAttendance({ courseCode, role }) {
 
     try {
       const result = await api.recordAttendance(courseCode, qrData.token);
-      if (result.success !== false) {
+      if (result.error) {
+        setMessage('⚠️ ' + result.error);
+      } else {
         setMessage("✅ Absen berhasil! Kehadiran tercatat.");
         await loadAttendanceRecords();
-      } else {
-        setMessage('⚠️ ' + (result.error || 'Gagal absen.'));
       }
     } catch (err) {
-      // Fallback: local attendance
-      const key = 'attendance_' + courseCode;
-      const records = JSON.parse(localStorage.getItem(key) || "[]");
-      if (records.find((r) => r.token === qrData.token && r.student === "Kamu")) {
-        setMessage("⚠️ Kamu sudah absen untuk sesi ini.");
-      } else {
-        records.push({
-          student: "Kamu",
-          token: qrData.token,
-          time: new Date().toLocaleString("id-ID"),
-          timestamp: Date.now(),
-        });
-        localStorage.setItem(key, JSON.stringify(records));
-        setAttendanceRecords(records);
-        setMessage("✅ Absen berhasil! (local)");
-      }
+      setMessage('⚠️ ' + (err.error || err.message || 'Gagal mencatat absensi. Periksa koneksi.'));
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(""), 3000);
@@ -247,12 +238,20 @@ export default function QRAttendance({ courseCode, role }) {
               <div key={i} className="flex items-center justify-between text-sm py-1.5 px-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-2">
                   <span className="text-green-500">✅</span>
-                  <span className="font-medium text-gray-700">{r.student}</span>
+                  <span className="font-medium text-gray-700">{r.student || r.student_name}</span>
                 </div>
-                <span className="text-xs text-gray-400">{r.time}</span>
+                <span className="text-xs text-gray-400">{r.time || r.recorded_at || r.created_at}</span>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {message && role === "lecturer" && (
+        <div className={'mt-4 px-4 py-2 rounded-lg text-sm font-medium ' + (
+          message.includes("berhasil") ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+        )}>
+          {message}
         </div>
       )}
     </div>

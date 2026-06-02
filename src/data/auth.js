@@ -5,6 +5,43 @@ import { api } from "../api/client";
 const TOKEN_KEY = "ppToken";
 const USER_KEY = "ppUser";
 
+// QR Attendance utilities — DEPRECATED: migrated to backend
+// These functions are kept for backward compatibility but are no longer used.
+// Token generation is now handled by POST /api/attendance/generate (server-side)
+// Attendance recording is now handled by POST /api/attendance/record (server-side)
+
+/** @deprecated Use api.createAttendanceSession() instead */
+export function generateQRData(courseCode) {
+  console.warn('generateQRData is deprecated. Use api.createAttendanceSession() instead.');
+  const token = Math.random().toString(36).substring(2, 10);
+  const now = Date.now();
+  const expiresIn = 60;
+  return {
+    courseCode,
+    token,
+    generatedAt: now,
+    expiresAt: now + expiresIn * 1000,
+  };
+}
+
+/** @deprecated Use api.recordAttendance() instead */
+export function recordAttendance(courseCode, qrToken, studentName) {
+  console.warn('recordAttendance is deprecated. Use api.recordAttendance() instead.');
+  const key = 'attendance_' + courseCode;
+  const records = JSON.parse(localStorage.getItem(key) || '[]');
+  if (records.find((r) => r.token === qrToken && r.student === studentName)) {
+    return { success: false, error: 'Kamu sudah absen untuk sesi ini.' };
+  }
+  records.push({
+    student: studentName,
+    token: qrToken,
+    time: new Date().toLocaleString('id-ID'),
+    timestamp: Date.now(),
+  });
+  localStorage.setItem(key, JSON.stringify(records));
+  return { success: true };
+}
+
 export function useAuth() {
   const [user, setUser] = useState(() => {
     try {
@@ -82,31 +119,9 @@ export function useAuth() {
   return { user, loading, login, register, logout, updateUser };
 }
 
-// QR Attendance utilities — kept for backward compatibility
-export function generateQRData(courseCode) {
-  const token = Math.random().toString(36).substring(2, 10);
-  const now = Date.now();
-  const expiresIn = 60;
-  return {
-    courseCode,
-    token,
-    generatedAt: now,
-    expiresAt: now + expiresIn * 1000,
-  };
-}
+// QR Attendance utilities — MIGRATED TO BACKEND
+// generateQRData() and recordAttendance() have been removed.
+// Token generation is now handled by POST /api/attendance/generate (backend).
+// Attendance recording is now handled by POST /api/attendance/record (backend).
+// See: backend/src/routes/attendance.js and src/api/client.js for the new implementation.
 
-export function recordAttendance(courseCode, qrToken, studentName) {
-  const key = 'attendance_' + courseCode;
-  const records = JSON.parse(localStorage.getItem(key) || '[]');
-  if (records.find((r) => r.token === qrToken && r.student === studentName)) {
-    return { success: false, error: 'Kamu sudah absen untuk sesi ini.' };
-  }
-  records.push({
-    student: studentName,
-    token: qrToken,
-    time: new Date().toLocaleString('id-ID'),
-    timestamp: Date.now(),
-  });
-  localStorage.setItem(key, JSON.stringify(records));
-  return { success: true };
-}

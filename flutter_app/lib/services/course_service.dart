@@ -26,15 +26,4 @@ class CourseService {
   static Future<dynamic> enroll(int courseId) async {
     return await ApiClient.post('/courses/$courseId/enroll');
   }
-
-  static Future<List<Course>> getMyCourses() async {
-    try {
-      final data = await ApiClient.get('/users/me/courses');
-      return (data['courses'] as List)
-          .map((c) => Course.fromJson(c))
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
 }

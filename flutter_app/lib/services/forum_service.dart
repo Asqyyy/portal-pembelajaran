@@ -3,20 +3,21 @@ import 'api_client.dart';
 
 class ForumService {
   static Future<List<ForumThread>> getThreads(int courseId) async {
-    final data = await ApiClient.get('/courses/$courseId/forum');
+    final data = await ApiClient.get('/forum/course/$courseId');
     return (data['threads'] as List)
         .map((t) => ForumThread.fromJson(t))
         .toList();
   }
 
   static Future<ForumThread> getThread(int threadId) async {
-    final data = await ApiClient.get('/forum/$threadId');
+    final data = await ApiClient.get('/forum/thread/$threadId');
     return ForumThread.fromJson(data['thread']);
   }
 
   static Future<ForumThread> createThread(
       int courseId, String title, String content) async {
-    final data = await ApiClient.post('/courses/$courseId/forum', body: {
+    final data = await ApiClient.post('/forum/thread', body: {
+      'course_id': courseId,
       'title': title,
       'content': content,
     });
@@ -24,7 +25,7 @@ class ForumService {
   }
 
   static Future<ForumReply> createReply(int threadId, String content) async {
-    final data = await ApiClient.post('/forum/$threadId/reply', body: {
+    final data = await ApiClient.post('/forum/thread/$threadId/reply', body: {
       'content': content,
     });
     return ForumReply.fromJson(data['reply']);

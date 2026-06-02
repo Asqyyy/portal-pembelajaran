@@ -51,6 +51,10 @@ export const api = {
   getGradeSummary: (courseId) => request('/gradebook/course/' + courseId + '/summary'),
 
   // Attendance
-  recordAttendance: (courseCode, token) => request('/attendance/record', { method: 'POST', body: JSON.stringify({ courseCode, token }) }),
+  createAttendanceSession: (courseCode, duration) => request('/attendance/generate', { method: 'POST', body: JSON.stringify({ course_code: courseCode, duration }) }),
+  recordAttendance: (courseCode, token) => request('/attendance/record', { method: 'POST', body: JSON.stringify({ course_code: courseCode, token }) }),
   getAttendance: (courseCode) => request('/attendance/course/' + courseCode),
+
+  // Course creation
+  createCourse: (data) => request('/courses', { method: 'POST', body: JSON.stringify(data) }),
 };

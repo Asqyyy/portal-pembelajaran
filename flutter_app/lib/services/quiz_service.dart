@@ -3,7 +3,7 @@ import 'api_client.dart';
 
 class QuizService {
   static Future<List<Quiz>> getQuizzes(int courseId) async {
-    final data = await ApiClient.get('/courses/$courseId/quiz');
+    final data = await ApiClient.get('/quiz/course/$courseId');
     return (data['quizzes'] as List).map((q) => Quiz.fromJson(q)).toList();
   }
 
@@ -20,7 +20,7 @@ class QuizService {
   }
 
   static Future<QuizResult> getResult(int quizId) async {
-    final data = await ApiClient.get('/quiz/$quizId/result');
+    final data = await ApiClient.get('/quiz/$quizId/results');
     return QuizResult.fromJson(data['result'] ?? data);
   }
 }

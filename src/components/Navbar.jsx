@@ -1,46 +1,47 @@
 import { useState } from "react";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 
-export default function Navbar({ currentPage, setCurrentPage, role, user, onLogout }) {
+export default function Navbar({ role, user, onLogout }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  const navLinks = [
-    { page: "dashboard", icon: "🏠", label: "Beranda" },
-    { page: "courses", icon: "📚", label: "Kursus Saya", hasDropdown: true },
-  ];
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentPath = location.pathname;
 
   return (
     <nav className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
         {/* Logo */}
-        <div
+        <Link
+          to="/"
           className="flex items-center gap-3 cursor-pointer flex-shrink-0"
-          onClick={() => { setCurrentPage("dashboard"); setMobileOpen(false); }}
+          onClick={() => setMobileOpen(false)}
         >
           <img src="/logo.png" alt="Portal Pembelajaran Logo" className="w-8 h-8 md:w-10 md:h-10 drop-shadow-md" />
           <span className="text-lg md:text-xl font-bold text-white tracking-tight">
             Portal<span className="text-purple-300">Pembelajaran</span>
           </span>
-        </div>
+        </Link>
 
         {/* Desktop Nav */}
         <div className="hidden md:flex items-center gap-2">
-          <button
-            onClick={() => { setCurrentPage("dashboard"); setShowDropdown(false); }}
+          <Link
+            to="/"
+            onClick={() => setShowDropdown(false)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              currentPage === "dashboard"
+              currentPath === "/"
                 ? "bg-white/20 text-white"
                 : "text-white/70 hover:text-white hover:bg-white/10"
             }`}
           >
             🏠 Beranda
-          </button>
+          </Link>
 
           <div className="relative">
             <button
               onClick={() => setShowDropdown(!showDropdown)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                currentPage === "courses"
+                currentPath === "/courses" || currentPath.startsWith("/courses/")
                   ? "bg-white/20 text-white"
                   : "text-white/70 hover:text-white hover:bg-white/10"
               }`}
@@ -51,24 +52,20 @@ export default function Navbar({ currentPage, setCurrentPage, role, user, onLogo
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowDropdown(false)} />
                 <div className="absolute top-full mt-2 right-0 bg-white rounded-xl shadow-2xl p-2 min-w-[220px] z-20 animate-[fadeIn_0.2s_ease]">
-                  <button
-                    onClick={() => {
-                      setCurrentPage("courses");
-                      setShowDropdown(false);
-                    }}
+                  <Link
+                    to="/courses"
+                    onClick={() => setShowDropdown(false)}
                     className="w-full text-left px-4 py-2.5 rounded-lg hover:bg-blue-50 text-blue-700 font-medium text-sm transition-colors flex items-center gap-2"
                   >
                     <span>📖</span> Sedang Dipelajari
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCurrentPage("courses");
-                      setShowDropdown(false);
-                    }}
+                  </Link>
+                  <Link
+                    to="/courses"
+                    onClick={() => setShowDropdown(false)}
                     className="w-full text-left px-4 py-2.5 rounded-lg hover:bg-purple-50 text-purple-700 font-medium text-sm transition-colors flex items-center gap-2"
                   >
                     <span>🎓</span> Sedang Diajar
-                  </button>
+                  </Link>
                 </div>
               </>
             )}
@@ -97,12 +94,12 @@ export default function Navbar({ currentPage, setCurrentPage, role, user, onLogo
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => setCurrentPage("login")}
+            <Link
+              to="/login"
               className="px-4 py-2 bg-white/10 text-white rounded-lg text-sm hover:bg-white/20 transition-all flex items-center gap-1"
             >
               <span>🔐</span> Masuk
-            </button>
+            </Link>
           )}
         </div>
 
@@ -128,26 +125,28 @@ export default function Navbar({ currentPage, setCurrentPage, role, user, onLogo
       {mobileOpen && (
         <div className="md:hidden bg-white/5 backdrop-blur-md border-t border-white/10 px-4 py-3 animate-[fadeIn_0.2s_ease]">
           <div className="space-y-2">
-            <button
-              onClick={() => { setCurrentPage("dashboard"); setMobileOpen(false); }}
-              className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                currentPage === "dashboard"
+            <Link
+              to="/"
+              onClick={() => setMobileOpen(false)}
+              className={`block w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                currentPath === "/"
                   ? "bg-white/20 text-white"
                   : "text-white/70 hover:text-white hover:bg-white/10"
               }`}
             >
               🏠 Beranda
-            </button>
-            <button
-              onClick={() => { setCurrentPage("courses"); setMobileOpen(false); }}
-              className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                currentPage === "courses"
+            </Link>
+            <Link
+              to="/courses"
+              onClick={() => setMobileOpen(false)}
+              className={`block w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                currentPath === "/courses" || currentPath.startsWith("/courses/")
                   ? "bg-white/20 text-white"
                   : "text-white/70 hover:text-white hover:bg-white/10"
               }`}
             >
               📚 Kursus Saya
-            </button>
+            </Link>
 
             <hr className="border-white/10" />
 
@@ -165,12 +164,13 @@ export default function Navbar({ currentPage, setCurrentPage, role, user, onLogo
                 🚪 Keluar
               </button>
             ) : (
-              <button
-                onClick={() => { setCurrentPage("login"); setMobileOpen(false); }}
-                className="w-full text-left px-4 py-2.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-all flex items-center gap-2"
+              <Link
+                to="/login"
+                onClick={() => setMobileOpen(false)}
+                className="block w-full text-left px-4 py-2.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-all"
               >
                 <span>🔐</span> Masuk
-              </button>
+              </Link>
             )}
           </div>
         </div>
