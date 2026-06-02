@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
 
-export default function Login({ onLogin, onSwitchToRegister }) {
+export default function Login({ onLogin }) {
   const [form, setForm] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubmit = async () => {
     setError("");
@@ -14,7 +16,9 @@ export default function Login({ onLogin, onSwitchToRegister }) {
     setLoading(true);
     try {
       const result = await onLogin(form.username, form.password);
-      if (!result.success) {
+      if (result.success) {
+        navigate("/");
+      } else {
         setError(result.error);
       }
     } catch (e) {
@@ -88,9 +92,9 @@ export default function Login({ onLogin, onSwitchToRegister }) {
 
         <p className="text-center text-sm text-gray-500 mt-6">
           Belum punya akun?{" "}
-          <button onClick={onSwitchToRegister} className="text-purple-600 font-semibold hover:underline">
+          <Link to="/register" className="text-purple-600 font-semibold hover:underline">
             Daftar
-          </button>
+          </Link>
         </p>
       </div>
     </div>

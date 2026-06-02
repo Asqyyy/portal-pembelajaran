@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { courses, sectionTemplates } from "../data/mockData";
 import { api } from "../api/client";
 import QRAttendance from "./QRAttendance";
@@ -402,8 +403,12 @@ function AssignmentSection({ courseId, role }) {
   );
 }
 
-export default function CourseDetail({ courseId, courseCode, setCurrentPage, role, user }) {
+export default function CourseDetail({ role, user }) {
+  const { courseId: courseIdParam } = useParams();
+  const navigate = useNavigate();
+  const courseId = Number(courseIdParam);
   const course = courses.find((c) => c.id === courseId);
+  const [courseData, setCourseData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [openSections, setOpenSections] = useState(() => {
@@ -435,6 +440,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
         const courseLecturers = course?.lecturers || [];
         const merged = [...new Set([...apiLecturers, ...courseLecturers])];
         setAllLecturers(merged);
+        setCourseData(data);
       })
       .catch((err) => {
         setError("Gagal memuat data kursus. Menggunakan data lokal.");
@@ -505,7 +511,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
         <div className="text-center max-w-md page-enter">
           <div className="text-5xl mb-4">⚠️</div>
           <p className="text-red-500 mb-4">{error}</p>
-          <button onClick={() => setCurrentPage("courses")} className="px-6 py-3 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 transition-colors">
+          <button onClick={() => navigate("/courses")} className="px-6 py-3 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 transition-colors">
             ← Kembali ke Kursus Saya
           </button>
         </div>
@@ -520,7 +526,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
           <div className="text-5xl mb-4">📭</div>
           <h3 className="text-xl font-bold text-gray-700 mb-2">Kursus Tidak Ditemukan</h3>
           <p className="text-gray-500 mb-4">Mata pelajaran yang kamu cari tidak tersedia.</p>
-          <button onClick={() => setCurrentPage("courses")} className="px-6 py-3 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 transition-colors">
+          <button onClick={() => navigate("/courses")} className="px-6 py-3 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 transition-colors">
             ← Kembali ke Kursus Saya
           </button>
         </div>
@@ -537,7 +543,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
       >
         <div className="max-w-5xl mx-auto">
           <button
-            onClick={() => setCurrentPage("courses")}
+            onClick={() => navigate("/courses")}
             className="text-white/60 hover:text-white mb-6 flex items-center gap-2 transition-colors text-sm"
           >
             ← Kembali ke Kursus Saya
@@ -668,7 +674,7 @@ export default function CourseDetail({ courseId, courseCode, setCurrentPage, rol
             </div>
           </div>
           <div className="expandable-content open">
-            <QRAttendance courseCode={courseCode || 'COURSE-' + courseId} role={role} />
+            <QRAttendance courseCode={courseData?.course_code || course?.courseCode || 'COURSE-' + courseId} role={role} />
           </div>
         </div>
 

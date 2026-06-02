@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
 
-export default function Register({ onRegister, onSwitchToLogin }) {
+export default function Register({ onRegister }) {
+  const navigate = useNavigate();
   const [step, setStep] = useState(1); // 1: form, 2: verification
   const [form, setForm] = useState({ username: "", password: "", email: "" });
   const [error, setError] = useState("");
@@ -33,19 +35,19 @@ export default function Register({ onRegister, onSwitchToLogin }) {
     }, 1500);
   };
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     setError("");
     if (verificationCode !== generatedCode) {
       setError("Kode verifikasi salah. Coba lagi.");
       return;
     }
-    const result = onRegister(form.username, form.password, form.email);
+    const result = await onRegister(form.username, form.password, form.email);
     if (!result.success) {
       setError(result.error);
       return;
     }
-    // Success — parent will switch to login
-    onSwitchToLogin(form.username);
+    // Success — navigate to login
+    navigate("/login");
   };
 
   return (
@@ -173,9 +175,9 @@ export default function Register({ onRegister, onSwitchToLogin }) {
 
         <p className="text-center text-sm text-gray-500 mt-6">
           Sudah punya akun?{" "}
-          <button onClick={() => onSwitchToLogin()} className="text-purple-600 font-semibold hover:underline">
+          <Link to="/login" className="text-purple-600 font-semibold hover:underline">
             Masuk
-          </button>
+          </Link>
         </p>
       </div>
     </div>
