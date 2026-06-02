@@ -7,7 +7,8 @@ export default function Login({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError("");
     if (!form.username || !form.password) {
       setError("Username dan password harus diisi.");
@@ -19,10 +20,10 @@ export default function Login({ onLogin }) {
       if (result.success) {
         navigate("/");
       } else {
-        setError(result.error);
+        setError(result.error || "Gagal masuk. Periksa kembali username & password Anda.");
       }
     } catch (e) {
-      setError(e.error || e.message || "Login gagal. Periksa koneksi.");
+      setError(e.error || e.message || "Login gagal. Periksa koneksi ke server.");
     } finally {
       setLoading(false);
     }
@@ -51,17 +52,17 @@ export default function Login({ onLogin }) {
           </div>
         )}
 
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Username</label>
             <input
               type="text"
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
               placeholder="Masukkan username"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all text-sm"
               autoFocus
+              required
             />
           </div>
           <div>
@@ -70,25 +71,25 @@ export default function Login({ onLogin }) {
               type="password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
               placeholder="Masukkan password"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all text-sm"
+              required
             />
           </div>
-        </div>
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="w-full mt-6 py-3.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold text-base hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
-        >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Memproses...
-            </span>
-          ) : "🔐 Masuk"}
-        </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-6 py-3.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold text-base hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Memproses...
+              </span>
+            ) : "🔐 Masuk"}
+          </button>
+        </form>
 
         <p className="text-center text-sm text-gray-500 mt-6">
           Belum punya akun?{" "}

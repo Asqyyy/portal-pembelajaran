@@ -12,7 +12,7 @@ router.get('/course/:courseId', authenticate, async (req, res) => {
        LEFT JOIN forum_replies fr ON ft.id = fr.thread_id
        WHERE ft.course_id = $1
        GROUP BY ft.id
-       ORDER BY ft.type = 'announcement' DESC, ft.created_at DESC`,
+       ORDER BY ft.is_announcement DESC, ft.created_at DESC`,
       [req.params.courseId]
     );
     res.json(rows);
@@ -22,68 +22,68 @@ router.get('/course/:courseId', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/forum/thread — create thread
-router.post('/thread', authenticate, async (req, res) => {
-  try {
-    const { course_id, title, content, type } = req.body;
-    if (!course_id || !title) {
-      return res.status(400).json({ error: 'course_id dan title wajib diisi' });
-    }
-    // Only lecturers can create announcements
-    const threadType = type || 'discussion';
-    if (threadType === 'announcement' && req.user.role !== 'lecturer') {
-      return res.status(403).json({ error: 'Hanya dosen yang bisa membuat announcement' });
-    }
-    const { rows } = await pool.query(
-      `INSERT INTO forum_threads (course_id, user_id, title, content, author_name, author_role, type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [course_id, req.user.id, title, content || '', req.user.username, req.user.role, threadType]
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    console.error('Create thread error:', err);
-    res.status(500).json({ error: 'Gagal membuat thread' });
-  }
-});
-
-// GET /api/forum/thread/:id — get thread + replies
+// GET /api/forum/thread/:id — get thread details with replies
 router.get('/thread/:id', authenticate, async (req, res) => {
   try {
-    const { rows: threads } = await pool.query(
+    const { rows: threadRows } = await pool.query(
       'SELECT * FROM forum_threads WHERE id = $1',
       [req.params.id]
     );
-    if (threads.length === 0) return res.status(404).json({ error: 'Thread tidak ditemukan' });
+    if (threadRows.length === 0) return res.status(404).json({ error: 'Thread tidak ditemukan' });
+    const thread = threadRows[0];
 
-    const { rows: replies } = await pool.query(
+    const { rows: replyRows } = await pool.query(
       'SELECT * FROM forum_replies WHERE thread_id = $1 ORDER BY created_at ASC',
       [req.params.id]
     );
 
-    res.json({ thread: threads[0], replies });
+    res.json({ ...thread, replies: replyRows });
   } catch (err) {
     console.error('Get thread error:', err);
-    res.status(500).json({ error: 'Gagal mengambil thread' });
+    res.status(500).json({ error: 'Gagal mengambil detail thread' });
   }
 });
 
-// POST /api/forum/thread/:id/reply — add reply
+// POST /api/forum/thread — create thread
+router.post('/thread', authenticate, async (req, res) => {
+  try {
+    const { course_id, title, content, is_announcement } = req.body;
+    if (!course_id || !title || !content) {
+      return res.status(400).json({ error: 'course_id, title, dan content wajib diisi' });
+    }
+
+    const isAnnouncement = !!is_announcement;
+    if (isAnnouncement && req.user.role !== 'lecturer' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Hanya pengajar yang bisa membuat pengumuman' });
+    }
+
+    const authorName = req.user.display_name || req.user.username;
+
+    const { rows } = await pool.query(
+      `INSERT INTO forum_threads (course_id, author_id, author_name, title, content, is_announcement)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [course_id, req.user.id, authorName, title, content, isAnnouncement]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('Create thread error:', err);
+    res.status(500).json({ error: 'Gagal membuat thread baru' });
+  }
+});
+
+// POST /api/forum/thread/:id/reply — reply to a thread
 router.post('/thread/:id/reply', authenticate, async (req, res) => {
   try {
     const { content } = req.body;
-    if (!content) return res.status(400).json({ error: 'content wajib diisi' });
+    if (!content) return res.status(400).json({ error: 'Konten reply wajib diisi' });
 
-    const { rows: threads } = await pool.query('SELECT id FROM forum_threads WHERE id = $1', [req.params.id]);
-    if (threads.length === 0) return res.status(404).json({ error: 'Thread tidak ditemukan' });
+    const authorName = req.user.display_name || req.user.username;
 
     const { rows } = await pool.query(
-      `INSERT INTO forum_replies (thread_id, user_id, content, author_name, author_role)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [req.params.id, req.user.id, content, req.user.username, req.user.role]
+      `INSERT INTO forum_replies (thread_id, author_id, author_name, content)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.params.id, req.user.id, authorName, content]
     );
-
-    // Update thread's updated_at
-    await pool.query('UPDATE forum_threads SET updated_at = NOW() WHERE id = $1', [req.params.id]);
 
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -92,11 +92,51 @@ router.post('/thread/:id/reply', authenticate, async (req, res) => {
   }
 });
 
+// DELETE /api/forum/threads/:id — delete thread
+router.delete('/threads/:id', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM forum_threads WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Thread tidak ditemukan' });
+    const thread = rows[0];
+
+    // Only creator or lecturer/admin can delete
+    if (req.user.role !== 'lecturer' && req.user.role !== 'admin' && thread.author_id !== req.user.id) {
+      return res.status(403).json({ error: 'Akses ditolak. Anda tidak berhak menghapus thread ini.' });
+    }
+
+    await pool.query('DELETE FROM forum_threads WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Thread berhasil dihapus' });
+  } catch (err) {
+    console.error('Delete thread error:', err);
+    res.status(500).json({ error: 'Gagal menghapus thread' });
+  }
+});
+
+// DELETE /api/forum/replies/:id — delete reply
+router.delete('/replies/:id', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM forum_replies WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Balasan tidak ditemukan' });
+    const reply = rows[0];
+
+    // Only creator or lecturer/admin can delete
+    if (req.user.role !== 'lecturer' && req.user.role !== 'admin' && reply.author_id !== req.user.id) {
+      return res.status(403).json({ error: 'Akses ditolak. Anda tidak berhak menghapus balasan ini.' });
+    }
+
+    await pool.query('DELETE FROM forum_replies WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Balasan berhasil dihapus' });
+  } catch (err) {
+    console.error('Delete reply error:', err);
+    res.status(500).json({ error: 'Gagal menghapus balasan' });
+  }
+});
+
 // PUT /api/forum/thread/:id/verify — mark thread verified (lecturer)
 router.put('/thread/:id/verify', authenticate, async (req, res) => {
   try {
-    if (req.user.role !== 'lecturer') {
-      return res.status(403).json({ error: 'Hanya dosen yang bisa memverifikasi' });
+    if (req.user.role !== 'lecturer' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Hanya pengajar yang bisa memverifikasi' });
     }
     const { rows } = await pool.query(
       'UPDATE forum_threads SET is_verified = true WHERE id = $1 RETURNING *',
@@ -113,8 +153,8 @@ router.put('/thread/:id/verify', authenticate, async (req, res) => {
 // PUT /api/forum/reply/:id/verify — mark reply verified (lecturer)
 router.put('/reply/:id/verify', authenticate, async (req, res) => {
   try {
-    if (req.user.role !== 'lecturer') {
-      return res.status(403).json({ error: 'Hanya dosen yang bisa memverifikasi' });
+    if (req.user.role !== 'lecturer' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Hanya pengajar yang bisa memverifikasi' });
     }
     const { rows } = await pool.query(
       'UPDATE forum_replies SET is_verified = true WHERE id = $1 RETURNING *',

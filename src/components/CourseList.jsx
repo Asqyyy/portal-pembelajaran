@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { courses as allCourses } from "../data/mockData";
 import { api } from "../api/client";
 
 export default function CourseList({ role, user }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("learning");
   const [enrolledCourses, setEnrolledCourses] = useState([]);
+  const [allCourses, setAllCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showEnrollModal, setShowEnrollModal] = useState(false);
@@ -14,37 +14,36 @@ export default function CourseList({ role, user }) {
   const [enrollError, setEnrollError] = useState("");
   const [enrollSuccess, setEnrollSuccess] = useState("");
 
-  // Fetch enrolled courses from API
-  useEffect(() => {
+  const loadCourses = () => {
     if (!user) { setLoading(false); return; }
     setLoading(true);
     setError("");
-    api.getCourses()
-      .then((data) => {
-        const courses = Array.isArray(data) ? data : (data.courses || []);
-        // Filter by enrolled category
-        const learning = courses.filter(c => c.category === "learning");
-        const teaching = courses.filter(c => c.category === "teaching");
-        setEnrolledCourses([...learning, ...teaching]);
+    
+    // Fetch all courses (to match codes) and user enrollments
+    Promise.all([
+      api.getCourses(),
+      api.getCourse('/user/enrollments').catch(() => []) // fallback or secondary endpoint
+    ])
+      .then(([allData, userEnrollments]) => {
+        // If the backend has enrollment filter inside getCourses or separate
+        // Let's check format: getCourses returns all courses with `enrolled` key, or list
+        const courses = Array.isArray(allData) ? allData : [];
+        setAllCourses(courses);
+        
+        // Find enrolled ones
+        const enrolled = courses.filter(c => c.enrolled);
+        setEnrolledCourses(enrolled);
       })
       .catch((err) => {
-        console.warn("Failed to fetch courses from API:", err);
-        // Fallback: use cached data
-        try {
-          const cached = JSON.parse(localStorage.getItem("enrolledCourses") || "[]");
-          if (cached.length > 0) setEnrolledCourses(cached);
-        } catch {}
-        setError("Gagal memuat kursus dari server. Menampilkan data cache.");
+        console.error("Failed to fetch courses from API:", err);
+        setError("Gagal memuat kursus dari server: " + (err.message || err));
       })
       .finally(() => setLoading(false));
-  }, [user]);
+  };
 
-  // Cache enrolled courses
   useEffect(() => {
-    if (enrolledCourses.length > 0) {
-      localStorage.setItem("enrolledCourses", JSON.stringify(enrolledCourses));
-    }
-  }, [enrolledCourses]);
+    loadCourses();
+  }, [user]);
 
   const handleEnroll = async () => {
     setEnrollError("");
@@ -54,29 +53,29 @@ export default function CourseList({ role, user }) {
       setEnrollError("Masukkan kode mata pelajaran terlebih dahulu.");
       return;
     }
+
     const course = allCourses.find((c) => c.courseCode === code);
     if (!course) {
       setEnrollError("Kode mata pelajaran tidak ditemukan. Periksa kembali kode yang dimasukkan.");
       return;
     }
+
     if (enrolledCourses.some((c) => c.courseCode === code && c.category === activeTab)) {
       setEnrollError("Kamu sudah terdaftar di mata pelajaran ini.");
       return;
     }
 
     try {
-      // Try API enroll
       await api.enrollCourse(course.id, activeTab);
-      const entry = { ...course, category: activeTab, id: course.id };
-      setEnrolledCourses([...enrolledCourses, entry]);
       setEnrollSuccess('Berhasil mendaftar ke "' + course.courseName + '"!');
       setEnrollCode("");
+      // Reload list to get updated status
+      setTimeout(() => {
+        setShowEnrollModal(false);
+        loadCourses();
+      }, 1000);
     } catch (err) {
-      // Fallback: local enroll
-      const entry = { ...course, category: activeTab };
-      setEnrolledCourses([...enrolledCourses, entry]);
-      setEnrollSuccess('Berhasil mendaftar ke "' + course.courseName + '" (local)!');
-      setEnrollCode("");
+      setEnrollError("Gagal mendaftar: " + (err.message || err));
     }
   };
 
@@ -177,8 +176,7 @@ export default function CourseList({ role, user }) {
                       <th style={{ width: "50px" }}>No</th>
                       <th style={{ width: "100px" }}>Kode</th>
                       <th>Nama Mata Pelajaran</th>
-                      <th>Fakultas</th>
-                      <th>Daftar Pengajar</th>
+                      <th>Deskripsi</th>
                       <th style={{ width: "100px" }}>Aksi</th>
                     </tr>
                   </thead>
@@ -196,21 +194,8 @@ export default function CourseList({ role, user }) {
                         <td className="font-semibold text-gray-800">
                           {course.courseName}
                         </td>
-                        <td>
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 rounded-full text-xs font-medium text-gray-600">
-                            🏛 {course.faculty}
-                          </span>
-                        </td>
-                        <td>
-                          {course.lecturers && course.lecturers.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {course.lecturers.map((lec, i) => (
-                                <span key={i} className="badge badge-lecturer">{lec}</span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-400 italic">Belum ada pengajar</span>
-                          )}
+                        <td className="text-gray-500 text-sm">
+                          {course.description || "-"}
                         </td>
                         <td>
                           <button
@@ -248,7 +233,7 @@ export default function CourseList({ role, user }) {
                   value={enrollCode}
                   onChange={(e) => setEnrollCode(e.target.value.toUpperCase())}
                   onKeyDown={(e) => e.key === "Enter" && handleEnroll()}
-                  placeholder="Contoh: MAT-XII"
+                  placeholder="Contoh: MTK-001"
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl text-lg font-mono text-center tracking-widest focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all"
                   autoFocus
                 />

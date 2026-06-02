@@ -9,293 +9,361 @@ export default function CalendarWidget({ courseId, role }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddEvent, setShowAddEvent] = useState(false);
-  const [newEvent, setNewEvent] = useState({ title: "", date: "", type: "deadline", color: "purple" });
+  const [newEvent, setNewEvent] = useState({ title: "", description: "", date: "", type: "general", color: "purple" });
+  const [success, setSuccess] = useState("");
 
-  // Load events from API
-  useEffect(() => {
+  const monthNames = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+  ];
+  
+  const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+
+  const loadEvents = async () => {
     setLoading(true);
     setError("");
-    api.getCourse(courseId)
-      .then((data) => {
-        const apiEvents = data.calendarEvents || data.events || [];
-        setEvents(apiEvents);
-      })
-      .catch(() => {
-        setError("Gagal memuat kalender.");
-        // Fallback to localStorage
-        try {
-          setEvents(JSON.parse(localStorage.getItem('calendar_' + courseId) || "[]"));
-        } catch { setEvents([]); }
-      })
-      .finally(() => setLoading(false));
-  }, [courseId]);
-
-  // Cache in localStorage
-  useEffect(() => {
-    if (events.length > 0) {
-      localStorage.setItem('calendar_' + courseId, JSON.stringify(events));
-    }
-  }, [events, courseId]);
-
-  // Auto-collect deadlines from quizzes & assignments
-  useEffect(() => {
-    const fetchAutoEvents = async () => {
-      try {
-        const quizData = await api.getQuizByCourse(courseId);
-        const quizzes = Array.isArray(quizData) ? quizData : (quizData.quizzes || []);
-        const courseData = await api.getCourse(courseId);
-        const assignments = courseData.assignments || [];
-        const autoEvents = [];
-
-        quizzes.forEach(q => {
-          if (q.deadline && !events.find(e => e.sourceId === 'quiz_' + q.id)) {
-            autoEvents.push({
-              id: 'auto_quiz_' + q.id, sourceId: 'quiz_' + q.id,
-              title: '📝 ' + q.title,
-              date: q.deadline, type: "quiz", color: "purple", isAuto: true
-            });
-          }
-        });
-        assignments.forEach(a => {
-          if (a.deadline && !events.find(e => e.sourceId === 'asg_' + a.id)) {
-            autoEvents.push({
-              id: 'auto_asg_' + a.id, sourceId: 'asg_' + a.id,
-              title: '📤 ' + a.title,
-              date: a.deadline, type: "assignment", color: "blue", isAuto: true
-            });
-          }
-        });
-        if (autoEvents.length > 0) {
-          setEvents(prev => {
-            const existing = new Set(prev.map(e => e.id));
-            return [...prev, ...autoEvents.filter(e => !existing.has(e.id))];
-          });
-        }
-      } catch {}
-    };
-    fetchAutoEvents();
-  }, [courseId]);
-
-  const addEvent = async () => {
-    if (!newEvent.title.trim() || !newEvent.date) return;
-    const eventData = {
-      id: Date.now(),
-      ...newEvent,
-      isAuto: false,
-      courseId,
-      createdAt: new Date().toLocaleDateString("id-ID")
-    };
-    const updated = [...events, eventData];
-    setEvents(updated);
-    setNewEvent({ title: "", date: "", type: "deadline", color: "purple" });
-    setShowAddEvent(false);
-
-    // Save to API
     try {
-      await api.updateCourse(courseId, { calendarEvents: updated });
-    } catch {}
+      const data = await api.getCalendarEvents(courseId);
+      setEvents(data);
+    } catch (err) {
+      setError("Gagal memuat kalender: " + (err.message || err));
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const removeEvent = (eventId) => {
-    const updated = events.filter(e => e.id !== eventId);
-    setEvents(updated);
-    try { api.updateCourse(courseId, { calendarEvents: updated }); } catch {}
+  useEffect(() => {
+    loadEvents();
+  }, [courseId]);
+
+  const handleAddEvent = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!newEvent.title.trim() || !newEvent.date) return;
+
+    try {
+      await api.createCalendarEvent({
+        course_id: courseId,
+        title: newEvent.title,
+        description: newEvent.description,
+        event_date: newEvent.date,
+        event_type: newEvent.type,
+        color: newEvent.color
+      });
+      setSuccess("Event kalender berhasil ditambahkan!");
+      setShowAddEvent(false);
+      setNewEvent({ title: "", description: "", date: "", type: "general", color: "purple" });
+      loadEvents();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal menambahkan event: " + (err.message || err));
+    }
   };
 
-  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-  const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1).getDay();
-  const today = new Date();
-
-  const isToday = (day) => {
-    return today.getDate() === day && today.getMonth() === selectedMonth && today.getFullYear() === selectedYear;
+  const handleRemoveEvent = async (eventId) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus event ini?")) return;
+    setError("");
+    try {
+      await api.deleteCalendarEvent(eventId);
+      setSuccess("Event kalender berhasil dihapus!");
+      loadEvents();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal menghapus event: " + (err.message || err));
+    }
   };
 
-  const getEventsForDay = (day) => {
+  // Generate calendar days
+  const getDaysInMonth = (month, year) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (month, year) => new Date(year, month, 1).getDay();
+
+  const daysInMonth = getDaysInMonth(selectedMonth, selectedYear);
+  const firstDay = getFirstDayOfMonth(selectedMonth, selectedYear);
+  
+  const daysArray = [];
+  // Fill empty spaces before first day of month
+  for (let i = 0; i < firstDay; i++) {
+    daysArray.push(null);
+  }
+  // Fill month days
+  for (let i = 1; i <= daysInMonth; i++) {
+    daysArray.push(i);
+  }
+
+  const getEventsForDate = (day) => {
+    if (!day) return [];
+    const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    return events.filter(e => e.date === dateStr);
+  };
+
+  const nextMonth = () => {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
+  };
+
+  const prevMonth = () => {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
+    }
+  };
+
+  // Get upcoming 7 days events
+  const getUpcomingEvents = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const limit = new Date(today);
+    limit.setDate(limit.getDate() + 7);
+
     return events.filter(e => {
       const eDate = new Date(e.date);
-      return eDate.getDate() === day && eDate.getMonth() === selectedMonth && eDate.getFullYear() === selectedYear;
-    });
+      eDate.setHours(0, 0, 0, 0);
+      return eDate >= today && eDate <= limit;
+    }).sort((a, b) => new Date(a.date) - new Date(b.date));
   };
 
   const colorMap = {
-    purple: "bg-purple-500", blue: "bg-blue-500", red: "bg-red-500",
-    green: "bg-green-500", orange: "bg-orange-500",
+    purple: "bg-purple-500",
+    red: "bg-red-500",
+    blue: "bg-blue-500",
+    green: "bg-green-500",
+    yellow: "bg-yellow-500"
   };
 
-  const typeLabels = {
-    deadline: "⏰ Tenggat", quiz: "📝 Kuis", assignment: "📤 Tugas",
-    event: "📅 Event", exam: "📋 Ujian",
+  const colorBorderMap = {
+    purple: "border-purple-200 bg-purple-50 text-purple-700",
+    red: "border-red-200 bg-red-50 text-red-700",
+    blue: "border-blue-200 bg-blue-50 text-blue-700",
+    green: "border-green-200 bg-green-50 text-green-700",
+    yellow: "border-yellow-200 bg-yellow-50 text-yellow-700"
   };
 
-  const upcoming = events
-    .filter(e => {
-      const eDate = new Date(e.date);
-      const diff = Math.ceil((eDate - today) / (1000 * 60 * 60 * 24));
-      return diff >= 0 && diff <= 7;
-    })
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  if (loading) {
-    return <div className="text-center py-12"><span className="text-gray-400">Loading calendar...</span></div>;
-  }
-
-  if (error) {
-    return <div className="text-center py-12"><span className="text-red-400">Error: {error}</span></div>;
-  }
+  const isLecturer = role === "lecturer" || role === "admin";
 
   return (
-    <div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-gray-800">
-              {months[selectedMonth]} {selectedYear}
-            </h3>
-            <div className="flex items-center gap-2">
-              <button onClick={() => {
-                if (selectedMonth === 0) { setSelectedMonth(11); setSelectedYear(prev => prev - 1); }
-                else setSelectedMonth(prev => prev - 1);
-              }} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm transition-colors">
-                ←
-              </button>
-              <button onClick={() => { setSelectedMonth(today.getMonth()); setSelectedYear(today.getFullYear()); }}
-                className="px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors font-medium">
-                Hari Ini
-              </button>
-              <button onClick={() => {
-                if (selectedMonth === 11) { setSelectedMonth(0); setSelectedYear(prev => prev + 1); }
-                else setSelectedMonth(prev => prev + 1);
-              }} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm transition-colors">
-                →
-              </button>
-            </div>
-          </div>
+    <div className="space-y-4">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="font-bold text-gray-800 text-lg">📅 JADWAL & KALENDER KELAS</h3>
+        {isLecturer && (
+          <button
+            onClick={() => setShowAddEvent(true)}
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl font-semibold text-sm shadow-md hover:shadow-lg transition-all"
+          >
+            ➕ Tambah Event
+          </button>
+        )}
+      </div>
 
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
-              {["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"].map(d => (
-                <div key={d} className="text-center py-2.5 text-xs font-semibold text-gray-500">{d}</div>
-              ))}
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm">
+          ⚠️ {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="p-3 bg-green-50 border border-green-100 text-green-600 rounded-xl text-sm">
+          ✅ {success}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-center py-6 text-gray-400">Memuat data kalender...</p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Grid Calendar */}
+          <div className="lg:col-span-2 bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="font-bold text-gray-700 text-base">
+                {monthNames[selectedMonth]} {selectedYear}
+              </h4>
+              <div className="flex gap-1">
+                <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-xl text-sm font-semibold">◀</button>
+                <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-xl text-sm font-semibold">▶</button>
+              </div>
             </div>
-            <div className="grid grid-cols-7">
-              {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-                <div key={'empty-' + i} className="h-20 p-1 border-r border-b border-gray-100 bg-gray-50/50" />
-              ))}
-              {Array.from({ length: daysInMonth }).map((_, i) => {
-                const day = i + 1;
-                const dayEvents = getEventsForDay(day);
+
+            <div className="grid grid-cols-7 gap-1 text-center font-bold text-xs text-gray-400 mb-2">
+              {dayNames.map(d => <div key={d} className="py-2">{d}</div>)}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {daysArray.map((day, idx) => {
+                const dateEvents = getEventsForDate(day);
+                const isToday = day && 
+                                currentDate.getDate() === day && 
+                                currentDate.getMonth() === selectedMonth && 
+                                currentDate.getFullYear() === selectedYear;
+
                 return (
-                  <div key={day} className={'h-20 p-1 border-r border-b border-gray-100 relative ' + (
-                    isToday(day) ? "bg-purple-50/50" : ""
-                  )}>
-                    <span className={'text-xs font-semibold inline-flex items-center justify-center w-6 h-6 rounded-full ' + (
-                      isToday(day) ? "bg-purple-500 text-white" : "text-gray-600"
-                    )}>
-                      {day}
-                    </span>
-                    <div className="mt-0.5 space-y-0.5">
-                      {dayEvents.slice(0, 2).map((ev, ix) => (
-                        <div key={ix} className={'w-1.5 h-1.5 rounded-full mx-auto ' + (colorMap[ev.color] || "bg-gray-400")} title={ev.title} />
-                      ))}
-                      {dayEvents.length > 2 && (
-                        <div className="text-[9px] text-gray-400 text-center">+{dayEvents.length - 2}</div>
-                      )}
-                    </div>
+                  <div
+                    key={idx}
+                    className={`min-h-[70px] p-1 border border-gray-100 rounded-xl flex flex-col justify-between ${
+                      day ? "bg-white" : "bg-gray-50/50"
+                    } ${isToday ? "ring-2 ring-indigo-500" : ""}`}
+                  >
+                    {day ? (
+                      <>
+                        <span className={`text-xs font-semibold block text-left p-1 ${
+                          isToday ? "text-indigo-600 font-extrabold" : "text-gray-500"
+                        }`}>{day}</span>
+                        
+                        <div className="space-y-1">
+                          {dateEvents.slice(0, 2).map((ev) => (
+                            <div
+                              key={ev.id}
+                              className={`text-[9px] px-1 py-0.5 rounded truncate text-left border ${
+                                colorBorderMap[ev.color || "purple"]
+                              }`}
+                              title={`${ev.title}\n${ev.description || ""}`}
+                            >
+                              {ev.title}
+                            </div>
+                          ))}
+                          {dateEvents.length > 2 && (
+                            <span className="text-[8px] text-gray-400 font-medium block text-left pl-1">
+                              +{dateEvents.length - 2} lainnya
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    ) : null}
                   </div>
                 );
               })}
             </div>
           </div>
+
+          {/* Sidebar Deadlines & events */}
+          <div className="space-y-4">
+            <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+              <h4 className="font-bold text-gray-700 text-sm mb-3">📅 Event 7 Hari Terdekat</h4>
+              {getUpcomingEvents().length === 0 ? (
+                <p className="text-xs text-gray-400">Tidak ada event dalam 7 hari terdekat.</p>
+              ) : (
+                <div className="space-y-3">
+                  {getUpcomingEvents().map(ev => {
+                    const daysLeft = Math.ceil((new Date(ev.date) - currentDate) / (1000 * 60 * 60 * 24));
+                    
+                    return (
+                      <div key={ev.id} className="flex justify-between items-start gap-2 p-3 bg-gray-50 rounded-xl border border-gray-150">
+                        <div className="min-w-0">
+                          <p className="font-bold text-gray-800 text-xs truncate">{ev.title}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">
+                            {new Date(ev.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })} 
+                            {daysLeft === 0 ? " (Hari ini)" : daysLeft === 1 ? " (Besok)" : ` (${daysLeft} hari lagi)`}
+                          </p>
+                        </div>
+                        {isLecturer && ev.createdBy && (
+                          <button
+                            onClick={() => handleRemoveEvent(ev.id)}
+                            className="text-gray-400 hover:text-red-500 text-xs p-1"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+      )}
 
-        <div>
-          {role === "lecturer" && (
-            <button onClick={() => setShowAddEvent(!showAddEvent)}
-              className="w-full px-4 py-3 bg-purple-500 text-white rounded-xl text-sm font-semibold hover:bg-purple-600 transition-colors mb-4">
-              ➕ Tambah Event
-            </button>
-          )}
-
-          {showAddEvent && (
-            <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
-              <h4 className="font-semibold text-gray-700 text-sm mb-3">Event Baru</h4>
-              <input type="text" value={newEvent.title} onChange={e => setNewEvent(p => ({ ...p, title: e.target.value }))}
-                placeholder="Judul event" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-2 focus:outline-none focus:border-purple-400" />
-              <input type="date" value={newEvent.date} onChange={e => setNewEvent(p => ({ ...p, date: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-2 focus:outline-none focus:border-purple-400" />
-              <div className="flex gap-2 mb-3">
-                <select value={newEvent.type} onChange={e => setNewEvent(p => ({ ...p, type: e.target.value }))}
-                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none">
-                  {Object.entries(typeLabels).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </select>
-                <select value={newEvent.color} onChange={e => setNewEvent(p => ({ ...p, color: e.target.value }))}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none">
-                  {Object.entries(colorMap).map(([k]) => (
-                    <option key={k} value={k}>{k === "purple" ? "🟣" : k === "blue" ? "🔵" : k === "red" ? "🔴" : k === "green" ? "🟢" : "🟠"} {k}</option>
-                  ))}
+      {/* Add Event Modal */}
+      {showAddEvent && (
+        <div className="modal-overlay" onClick={() => setShowAddEvent(false)}>
+          <form
+            onSubmit={handleAddEvent}
+            className="modal-content max-w-sm space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-gray-800">➕ Tambah Event Kalender</h3>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">Judul Event</label>
+              <input
+                type="text"
+                required
+                placeholder="Rapat, Kuis dadakan, UTS..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none"
+                value={newEvent.title}
+                onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">Keterangan / Deskripsi</label>
+              <textarea
+                placeholder="Detail event..."
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none"
+                value={newEvent.description}
+                onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">Tanggal Event</label>
+              <input
+                type="date"
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none text-sm"
+                value={newEvent.date}
+                onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Tipe</label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none text-xs"
+                  value={newEvent.type}
+                  onChange={(e) => setNewEvent({ ...newEvent, type: e.target.value })}
+                >
+                  <option value="general">Umum (General)</option>
+                  <option value="exam">Ujian (Exam)</option>
+                  <option value="deadline">Batas Waktu</option>
+                  <option value="holiday">Libur</option>
                 </select>
               </div>
-              <div className="flex gap-2">
-                <button onClick={addEvent} className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600">Simpan</button>
-                <button onClick={() => setShowAddEvent(false)} className="px-4 py-2 bg-gray-200 text-gray-600 rounded-lg text-sm hover:bg-gray-300">Batal</button>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Warna Label</label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none text-xs"
+                  value={newEvent.color}
+                  onChange={(e) => setNewEvent({ ...newEvent, color: e.target.value })}
+                >
+                  <option value="purple">Ungu</option>
+                  <option value="red">Merah</option>
+                  <option value="blue">Biru</option>
+                  <option value="green">Hijau</option>
+                  <option value="yellow">Kuning</option>
+                </select>
               </div>
             </div>
-          )}
-
-          <div className="bg-white border border-gray-200 rounded-2xl p-4">
-            <h4 className="font-semibold text-gray-700 text-sm mb-3">⏰ 7 Hari ke Depan</h4>
-            {upcoming.length === 0 ? (
-              <p className="text-xs text-gray-400">Tidak ada deadline mendatang 🎉</p>
-            ) : (
-              <div className="space-y-2">
-                {upcoming.map(ev => {
-                  const eDate = new Date(ev.date);
-                  const diff = Math.ceil((eDate - today) / (1000 * 60 * 60 * 24));
-                  return (
-                    <div key={ev.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className={'w-2 h-2 rounded-full flex-shrink-0 ' + (colorMap[ev.color] || "bg-gray-400")} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-700 truncate">{ev.title}</p>
-                        <p className="text-xs text-gray-400">
-                          {eDate.toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" })}
-                          {diff === 0 ? " • Hari ini!" : diff === 1 ? " • Besok!" : ' • ' + diff + ' hari lagi'}
-                        </p>
-                      </div>
-                      {role === "lecturer" && (
-                        <button onClick={() => removeEvent(ev.id)} className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">✕</button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white border border-gray-200 rounded-2xl p-4 mt-4">
-            <h4 className="font-semibold text-gray-700 text-sm mb-3">📋 Semua Event</h4>
-            {events.length === 0 ? (
-              <p className="text-xs text-gray-400">Belum ada event</p>
-            ) : (
-              <div className="space-y-1 max-h-60 overflow-y-auto">
-                {events.sort((a, b) => new Date(a.date) - new Date(b.date)).map(ev => (
-                  <div key={ev.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded hover:bg-gray-50">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={'w-1.5 h-1.5 rounded-full flex-shrink-0 ' + (colorMap[ev.color] || "bg-gray-400")} />
-                      <span className="text-gray-600 truncate">{ev.title}</span>
-                    </div>
-                    <span className="text-gray-400 flex-shrink-0 ml-2">
-                      {new Date(ev.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl font-semibold"
+              >
+                Simpan Event
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddEvent(false)}
+                className="px-4 py-2 bg-gray-150 text-gray-700 rounded-xl"
+              >
+                Batal
+              </button>
+            </div>
+          </form>
         </div>
-      </div>
+      )}
     </div>
   );
 }
