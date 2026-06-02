@@ -1,7 +1,26 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { api } from "../api/client";
 
 export default function Dashboard({ role, user, onLogout }) {
+  const [totalCourses, setTotalCourses] = useState("21+");
+  
+  useEffect(() => {
+    if (user) {
+      api.getCourses()
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setTotalCourses(`${data.length}`);
+          }
+        })
+        .catch((err) => {
+          console.warn("Failed to load courses count:", err);
+        });
+    }
+  }, [user]);
+
   const icons = ["📐", "🔬", "📖", "💡", "🧬", "🌍", "🧮", "🎯", "📏", "⚛️", "📚", "🏛️"];
+  const isLecturer = role === "lecturer" || role === "admin";
 
   return (
     <div className="dashboard-bg">
@@ -22,7 +41,6 @@ export default function Dashboard({ role, user, onLogout }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Nav links inside dashboard */}
             <Link
               to="/"
               className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-white/20 text-white transition-all"
@@ -36,10 +54,8 @@ export default function Dashboard({ role, user, onLogout }) {
               📚 Kursus Saya
             </Link>
 
-            {/* Divider */}
             <div className="w-px h-6 bg-white/20 mx-1 hidden sm:block" />
 
-            {/* Role indicator */}
             {user ? (
               <span className="bg-white/10 border border-white/20 text-white text-xs sm:text-sm rounded-lg px-3 py-2 flex items-center gap-2">
                 {role === "lecturer" ? "👨‍🏫 Pengajar" : "👨‍🎓 Siswa"}
@@ -60,7 +76,7 @@ export default function Dashboard({ role, user, onLogout }) {
                 </div>
                 <button
                   onClick={onLogout}
-                  className="text-xs text-white/40 hover:text-white/70 transition-colors hidden sm:block"
+                  className="text-xs text-white/45 hover:text-white/75 transition-colors hidden sm:block"
                 >
                   Keluar
                 </button>
@@ -77,7 +93,7 @@ export default function Dashboard({ role, user, onLogout }) {
           <div className="flex-1 text-center lg:text-left lg:pl-8">
             <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur rounded-full px-4 py-1.5 mb-6 border border-white/10">
               <span className="text-sm text-purple-300">
-                {user ? `🎓 Selamat datang, ${user.username}!` : "🎓 Selamat Datang di"}
+                {user ? `🎓 Selamat datang, ${user.displayName || user.username}!` : "🎓 Selamat Datang di"}
               </span>
             </div>
             <h2 className="text-4xl sm:text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
@@ -99,18 +115,27 @@ export default function Dashboard({ role, user, onLogout }) {
                 <span>📖</span> Jelajahi Kursus
               </Link>
               {user ? (
-                <Link
-                  to="/courses"
-                  className="px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold text-base sm:text-lg shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 hover:-translate-y-0.5 transition-all flex items-center gap-2"
-                >
-                  <span>🎓</span> Mulai Mengajar
-                </Link>
+                isLecturer ? (
+                  <Link
+                    to="/courses"
+                    className="px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold text-base sm:text-lg shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 hover:-translate-y-0.5 transition-all flex items-center gap-2"
+                  >
+                    <span>🎓</span> Mulai Mengajar
+                  </Link>
+                ) : (
+                  <Link
+                    to="/courses"
+                    className="px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-xl font-semibold text-base sm:text-lg shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 hover:-translate-y-0.5 transition-all flex items-center gap-2"
+                  >
+                    <span>📚</span> Kelas Saya
+                  </Link>
+                )
               ) : (
                 <Link
                   to="/register"
                   className="px-6 sm:px-8 py-3 sm:py-4 bg-white/5 backdrop-blur text-white/80 border border-white/20 rounded-xl font-semibold text-base sm:text-lg hover:bg-white/10 hover:-translate-y-0.5 transition-all flex items-center gap-2"
                 >
-                  <span>📝</span> Daftar untuk Mengajar
+                  <span>📝</span> Daftar untuk Belajar
                 </Link>
               )}
             </div>
@@ -120,7 +145,7 @@ export default function Dashboard({ role, user, onLogout }) {
           <div className="flex-shrink-0 w-full max-w-xs lg:max-w-sm lg:ml-auto lg:mr-4 mt-6 lg:mt-0">
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
               {[
-                { icon: "📚", value: "21+", label: "Mata Pelajaran", color: "from-blue-400/20 to-blue-500/10" },
+                { icon: "📚", value: totalCourses, label: "Mata Pelajaran", color: "from-blue-400/20 to-blue-500/10" },
                 { icon: "👨‍🏫", value: "Siap", label: "Untuk Pengajar", color: "from-purple-400/20 to-purple-500/10" },
                 { icon: "🎯", value: "Mandiri", label: "Belajar Fleksibel", color: "from-pink-400/20 to-pink-500/10" },
                 { icon: "🏛️", value: "MA/SMA", label: "Setara Aliyah", color: "from-orange-400/20 to-orange-500/10" },

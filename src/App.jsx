@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
 import { useAuth } from "./data/auth";
 import Dashboard from "./components/Dashboard";
 import CourseList from "./components/CourseList";
@@ -6,6 +6,7 @@ import CourseDetail from "./components/CourseDetail";
 import Login from "./components/Login";
 import Register from "./components/Register";
 import Navbar from "./components/Navbar";
+import NotFound from "./components/NotFound";
 
 function Footer() {
   return (
@@ -15,8 +16,20 @@ function Footer() {
   );
 }
 
+function MainLayout({ role, user, logout }) {
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Navbar role={role} user={user} onLogout={logout} />
+      <main className="flex-1">
+        <Outlet />
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
 function AppLayout() {
-  const { user, loading, login, register, logout, updateUser } = useAuth();
+  const { user, loading, login, register, logout } = useAuth();
   const role = user?.role || "student";
 
   if (loading) {
@@ -32,27 +45,19 @@ function AppLayout() {
 
   return (
     <Routes>
-      <Route path="/" element={<Dashboard role={role} user={user} onLogout={logout} />} />
+      {/* Auth Routes */}
       <Route path="/login" element={<Login onLogin={login} />} />
       <Route path="/register" element={<Register onRegister={register} />} />
-      <Route path="/courses" element={
-        <>
-          <Navbar role={role} user={user} onLogout={logout} />
-          <div className="flex-1 page-enter">
-            <CourseList role={role} user={user} />
-          </div>
-          <Footer />
-        </>
-      } />
-      <Route path="/courses/:courseId" element={
-        <>
-          <Navbar role={role} user={user} onLogout={logout} />
-          <div className="flex-1 page-enter">
-            <CourseDetail role={role} user={user} />
-          </div>
-          <Footer />
-        </>
-      } />
+
+      {/* Main Routes with layout */}
+      <Route element={<MainLayout role={role} user={user} logout={logout} />}>
+        <Route path="/" element={<Dashboard role={role} user={user} onLogout={logout} />} />
+        <Route path="/courses" element={<CourseList role={role} user={user} />} />
+        <Route path="/courses/:courseId" element={<CourseDetail role={role} user={user} />} />
+      </Route>
+
+      {/* 404 Catch All */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

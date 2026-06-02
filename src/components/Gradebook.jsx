@@ -3,181 +3,193 @@ import { api } from "../api/client";
 
 export default function Gradebook({ courseId, role }) {
   const [components, setComponents] = useState([]);
-  const [studentScores, setStudentScores] = useState({});
+  const [gradesList, setGradesList] = useState([]);
+  const [enrolledStudents, setEnrolledStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showAddComponent, setShowAddComponent] = useState(false);
-  const [newComponent, setNewComponent] = useState({ name: "", weight: 0, maxScore: 100 });
-  const [editScores, setEditScores] = useState(false);
-  const [studentName, setStudentName] = useState("");
-  const [showAddStudent, setShowAddStudent] = useState(false);
+  const [success, setSuccess] = useState("");
 
-  // Load gradebook from API
-  useEffect(() => {
+  // Modals & Entry States
+  const [showAddComponent, setShowAddComponent] = useState(false);
+  const [newComponent, setNewComponent] = useState({ name: "", weight: 0.2, maxScore: 100 });
+  const [showAddGrade, setShowAddGrade] = useState(false);
+  const [newGrade, setNewGrade] = useState({ componentId: "", studentId: "", score: "" });
+
+  const isLecturer = role === "lecturer" || role === "admin";
+
+  const loadGradebookData = async () => {
     setLoading(true);
     setError("");
-    api.getGradebook(courseId)
-      .then((data) => {
-        setComponents(Array.isArray(data.components) ? data.components : (data.components || []));
-        setStudentScores(data.scores || data.studentScores || {});
-      })
-      .catch(() => {
-        setError("Gagal memuat gradebook.");
-        // Fallback to localStorage
-        try {
-          setComponents(JSON.parse(localStorage.getItem('gradebook_' + courseId) || "[]"));
-        } catch {}
-        try {
-          setStudentScores(JSON.parse(localStorage.getItem('grades_' + courseId) || "{}"));
-        } catch {}
-      })
-      .finally(() => setLoading(false));
+    try {
+      const data = await api.getGradebook(courseId);
+      setComponents(data.components || []);
+      setGradesList(data.grades || []);
+
+      if (isLecturer) {
+        const students = await api.getEnrolledStudents(courseId);
+        setEnrolledStudents(students);
+      }
+    } catch (err) {
+      setError("Gagal memuat gradebook: " + (err.message || err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadGradebookData();
   }, [courseId]);
 
-  // Cache in localStorage
-  useEffect(() => {
-    if (components.length > 0) {
-      localStorage.setItem('gradebook_' + courseId, JSON.stringify(components));
-    }
-  }, [components, courseId]);
-
-  useEffect(() => {
-    if (Object.keys(studentScores).length > 0) {
-      localStorage.setItem('grades_' + courseId, JSON.stringify(studentScores));
-    }
-  }, [studentScores, courseId]);
-
-  const addComponent = async () => {
-    if (!newComponent.name.trim() || newComponent.weight <= 0) return;
-    const compData = { ...newComponent, id: Date.now(), courseId };
-    setComponents(prev => [...prev, compData]);
-    setNewComponent({ name: "", weight: 0, maxScore: 100 });
-    setShowAddComponent(false);
-
-    try { await api.addGradeComponent(compData); } catch {}
-  };
-
-  const removeComponent = (compId) => {
-    setComponents(prev => prev.filter(c => c.id !== compId));
-    try { api.removeGradeComponent(compId); } catch {}
-  };
-
-  const updateScore = async (student, componentId, score) => {
-    const maxScore = components.find(c => c.id === componentId)?.maxScore || 100;
-    const newScore = Math.min(Number(score), maxScore);
-    setStudentScores(prev => ({
-      ...prev,
-      [student]: { ...(prev[student] || {}), [componentId]: newScore }
-    }));
+  const handleAddComponent = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!newComponent.name.trim()) return;
 
     try {
-      await api.updateGrade({ courseId, student, componentId, score: newScore });
-    } catch {}
+      await api.addGradeComponent({
+        course_id: courseId,
+        name: newComponent.name,
+        weight: parseFloat(newComponent.weight),
+        max_score: parseInt(newComponent.maxScore, 10)
+      });
+      setSuccess("Komponen nilai baru berhasil ditambahkan!");
+      setShowAddComponent(false);
+      setNewComponent({ name: "", weight: 0.2, maxScore: 100 });
+      loadGradebookData();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal menambah komponen: " + (err.message || err));
+    }
   };
 
-  const addStudent = () => {
-    if (!studentName.trim()) return;
-    if (studentScores[studentName]) return;
-    setStudentScores(prev => ({ ...prev, [studentName]: {} }));
-    setStudentName("");
-    setShowAddStudent(false);
+  const handleRemoveComponent = async (id) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus komponen nilai ini beserta semua nilai siswa di dalamnya?")) return;
+    setError("");
+    try {
+      await api.removeGradeComponent(id);
+      setSuccess("Komponen nilai berhasil dihapus!");
+      loadGradebookData();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal menghapus komponen: " + (err.message || err));
+    }
   };
 
-  const removeStudent = (name) => {
-    setStudentScores(prev => {
-      const updated = { ...prev };
-      delete updated[name];
-      return updated;
-    });
+  const handleAddGrade = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!newGrade.componentId || !newGrade.studentId || newGrade.score === "") return;
+
+    try {
+      await api.updateGrade({
+        component_id: parseInt(newGrade.componentId, 10),
+        student_id: parseInt(newGrade.studentId, 10),
+        score: parseFloat(newGrade.score)
+      });
+      setSuccess("Nilai berhasil disimpan!");
+      setShowAddGrade(false);
+      setNewGrade({ componentId: "", studentId: "", score: "" });
+      loadGradebookData();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal menyimpan nilai: " + (err.message || err));
+    }
   };
 
-  const calculateFinalGrade = (student) => {
-    const scores = studentScores[student] || {};
-    let totalWeighted = 0;
+  const calculateFinalGrade = (studentGrades) => {
+    let finalScore = 0;
     let totalWeight = 0;
-    components.forEach(comp => {
-      const score = scores[comp.id];
-      if (score !== undefined && score !== null && score !== "") {
-        totalWeighted += (score / comp.maxScore) * comp.weight;
-        totalWeight += comp.weight;
+
+    components.forEach((c) => {
+      const studentGrade = studentGrades.find(g => g.componentId === c.id);
+      if (studentGrade) {
+        // Calculate weighted score based on components
+        const score = studentGrade.score || 0;
+        finalScore += (score / c.maxScore) * c.weight * 100;
+        totalWeight += c.weight;
       }
     });
-    if (totalWeight === 0) return "-";
-    return (totalWeighted / totalWeight * 100).toFixed(1);
+
+    if (totalWeight === 0) return 0;
+    // Normalize to 100 if weights don't sum to 1.0 (or just return direct weighted sum)
+    return Math.round(finalScore * 100) / 100;
   };
 
-  const getLetterGrade = (percentage) => {
-    if (percentage === "-") return "-";
-    const pct = parseFloat(percentage);
-    if (pct >= 85) return "A";
-    if (pct >= 75) return "B+";
-    if (pct >= 65) return "B";
-    if (pct >= 55) return "C+";
-    if (pct >= 50) return "C";
-    if (pct >= 40) return "D";
-    return "E";
-  };
-
-  const exportCSV = () => {
-    const students = Object.keys(studentScores);
-    if (students.length === 0) return;
-    let csv = "Nama";
-    components.forEach(c => { csv += ',' + c.name + ' (' + c.weight + '%)'; });
-    csv += ",Nilai Akhir,Huruf\n";
-    students.forEach(name => {
-      const final = calculateFinalGrade(name);
-      csv += name;
-      components.forEach(c => { csv += ',' + (studentScores[name]?.[c.id] || "-"); });
-      csv += ',' + final + ',' + getLetterGrade(final) + '\n';
+  const handleExportCSV = () => {
+    if (components.length === 0) return;
+    
+    // Group grades by student
+    const studentGradesMap = {};
+    gradesList.forEach(g => {
+      if (!studentGradesMap[g.studentId]) {
+        studentGradesMap[g.studentId] = {
+          studentName: g.studentName,
+          displayName: g.displayName || g.studentName,
+          scores: {}
+        };
+      }
+      studentGradesMap[g.studentId].scores[g.componentId] = g.score;
     });
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = 'nilai_course_' + courseId + '.csv'; a.click();
+
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Nama Siswa," + components.map(c => `${c.name} (${c.weight * 100}%)`).join(",") + ",Nilai Akhir\n";
+
+    Object.values(studentGradesMap).forEach((student) => {
+      const rowGrades = components.map(c => student.scores[c.id] || 0);
+      const studentGradesList = components.map(c => ({ componentId: c.id, score: student.scores[c.id] || 0 }));
+      const finalGrade = calculateFinalGrade(studentGradesList);
+      
+      csvContent += `${student.displayName},` + rowGrades.join(",") + `,${finalGrade}\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Gradebook_Course_${courseId}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
-  const students = Object.keys(studentScores);
-  const totalWeight = components.reduce((s, c) => s + c.weight, 0);
+  // Group grades by student for rendering
+  const studentGradesMap = {};
+  gradesList.forEach(g => {
+    if (!studentGradesMap[g.studentId]) {
+      studentGradesMap[g.studentId] = {
+        studentId: g.studentId,
+        studentName: g.studentName,
+        displayName: g.displayName || g.studentName,
+        grades: []
+      };
+    }
+    studentGradesMap[g.studentId].grades.push({ componentId: g.componentId, score: g.score });
+  });
 
-  if (loading) {
-    return <div className="text-center py-12"><span className="text-gray-400">Loading gradebook...</span></div>;
-  }
-
-  if (error) {
-    return <div className="text-center py-12"><span className="text-red-400">Error: {error}</span></div>;
-  }
+  const students = Object.values(studentGradesMap);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-        <div>
-          <h3 className="text-lg font-bold text-gray-800">📊 Gradebook</h3>
-          <p className="text-sm text-gray-500">
-            {components.length} komponen penilaian • {students.length} siswa
-            {totalWeight !== 100 && totalWeight > 0 && (
-              <span className="text-amber-500 ml-2">⚠️ Total bobot: {totalWeight}% (harus 100%)</span>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {role === "lecturer" && (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center flex-wrap gap-3">
+        <h3 className="font-bold text-gray-800 text-lg">📊 GRADEBOOK</h3>
+        <div className="flex gap-2">
+          {isLecturer && (
             <>
-              <button onClick={() => setShowAddStudent(!showAddStudent)}
-                className="px-4 py-2 bg-green-500 text-white rounded-xl text-sm font-semibold hover:bg-green-600 transition-colors">
-                ➕ Siswa
+              <button
+                onClick={() => setShowAddComponent(true)}
+                className="px-3.5 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl text-xs font-semibold shadow-sm"
+              >
+                ➕ Tambah Komponen
               </button>
-              <button onClick={() => setShowAddComponent(!showAddComponent)}
-                className="px-4 py-2 bg-indigo-500 text-white rounded-xl text-sm font-semibold hover:bg-indigo-600 transition-colors">
-                ➕ Komponen
+              <button
+                onClick={() => setShowAddGrade(true)}
+                className="px-3.5 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl text-xs font-semibold shadow-sm"
+              >
+                📝 Masukkan Nilai
               </button>
-              <button onClick={() => setEditScores(!editScores)}
-                className={'px-4 py-2 rounded-xl text-sm font-semibold transition-colors ' + (
-                  editScores ? "bg-amber-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                )}>
-                {editScores ? "🔒 Selesai Edit" : "✏️ Edit Nilai"}
-              </button>
-              <button onClick={exportCSV}
-                className="px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 transition-colors">
+              <button
+                onClick={handleExportCSV}
+                className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold"
+              >
                 📥 Export CSV
               </button>
             </>
@@ -185,159 +197,266 @@ export default function Gradebook({ courseId, role }) {
         </div>
       </div>
 
-      {showAddStudent && (
-        <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
-          <div className="flex items-center gap-3">
-            <input type="text" value={studentName} onChange={e => setStudentName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && addStudent()}
-              placeholder="Nama siswa..."
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-green-500" autoFocus />
-            <button onClick={addStudent} className="px-5 py-2 bg-green-500 text-white rounded-xl text-sm font-semibold hover:bg-green-600">Tambah</button>
-            <button onClick={() => setShowAddStudent(false)} className="px-4 py-2 text-gray-400 text-sm hover:text-gray-600">Batal</button>
-          </div>
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm">
+          ⚠️ {error}
         </div>
       )}
 
-      {showAddComponent && (
-        <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
-          <h4 className="font-semibold text-gray-700 text-sm mb-3">Komponen Penilaian Baru</h4>
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Nama</label>
-              <input type="text" value={newComponent.name} onChange={e => setNewComponent(p => ({ ...p, name: e.target.value }))}
-                placeholder="Contoh: UTS" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-indigo-400" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Bobot (%)</label>
-              <input type="number" value={newComponent.weight} onChange={e => setNewComponent(p => ({ ...p, weight: Number(e.target.value) }))}
-                placeholder="30" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-indigo-400" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Nilai Max</label>
-              <input type="number" value={newComponent.maxScore} onChange={e => setNewComponent(p => ({ ...p, maxScore: Number(e.target.value) }))}
-                placeholder="100" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-indigo-400" />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={addComponent} className="px-5 py-2 bg-indigo-500 text-white rounded-lg text-sm font-semibold hover:bg-indigo-600">Simpan</button>
-            <button onClick={() => setShowAddComponent(false)} className="px-5 py-2 bg-gray-200 text-gray-600 rounded-lg text-sm hover:bg-gray-300">Batal</button>
-          </div>
+      {success && (
+        <div className="p-3 bg-green-50 border border-green-100 text-green-600 rounded-xl text-sm">
+          ✅ {success}
         </div>
       )}
 
-      {students.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-2xl">
-          <span className="text-5xl">📊</span>
-          <p className="text-gray-500 mt-3">
-            {role === "lecturer" ? "Tambahkan siswa dan komponen penilaian untuk memulai." : "Belum ada data nilai."}
-          </p>
+      {loading ? (
+        <p className="text-center py-6 text-gray-400">Memuat gradebook...</p>
+      ) : components.length === 0 ? (
+        <div className="text-center py-10 bg-gray-50 rounded-2xl border border-dashed">
+          <p className="text-gray-400">Belum ada komponen nilai yang dikonfigurasi.</p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-2xl overflow-x-auto">
-          <table className="course-table">
+        <div className="content-card overflow-x-auto border border-gray-200 rounded-2xl shadow-sm">
+          <table className="min-w-full text-sm text-left">
             <thead>
-              <tr>
-                <th className="sticky left-0 bg-gray-50 z-10">Nama</th>
-                {components.map(comp => (
-                  <th key={comp.id} className="text-center">
-                    <div>{comp.name}</div>
-                    <div className="text-[10px] text-gray-400 font-normal">{comp.weight}%</div>
-                    {role === "lecturer" && editScores && (
-                      <button onClick={() => removeComponent(comp.id)} className="text-red-400 text-[10px] ml-1">✕</button>
-                    )}
+              <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold">
+                <th className="p-4">Nama Siswa</th>
+                {components.map(c => (
+                  <th key={c.id} className="p-4 whitespace-nowrap">
+                    <div className="flex items-center justify-between gap-4">
+                      <span>
+                        {c.name} <span className="text-xs text-gray-400">({c.weight * 100}%)</span>
+                      </span>
+                      {isLecturer && (
+                        <button
+                          onClick={() => handleRemoveComponent(c.id)}
+                          className="text-[10px] text-red-400 hover:text-red-600 ml-1 font-normal"
+                          title="Hapus komponen"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </th>
                 ))}
-                <th className="text-center bg-purple-50">
-                  <div>Nilai Akhir</div>
-                  <div className="text-[10px] text-purple-400 font-normal">Huruf</div>
-                </th>
-                {role === "lecturer" && editScores && <th className="w-10"></th>}
+                <th className="p-4">Nilai Akhir (100)</th>
               </tr>
             </thead>
             <tbody>
-              {students.sort().map(name => {
-                const final = calculateFinalGrade(name);
-                const letter = getLetterGrade(final);
-                const gradeColor = { "A": "text-green-600", "B+": "text-blue-600", "B": "text-blue-600", "C+": "text-amber-600", "C": "text-amber-600", "D": "text-orange-600", "E": "text-red-600" };
-                const letterColor = gradeColor[letter] || "text-gray-400";
-                return (
-                  <tr key={name}>
-                    <td className="sticky left-0 bg-white font-medium text-gray-700">{name}</td>
-                    {components.map(comp => (
-                      <td key={comp.id} className="text-center">
-                        {editScores ? (
-                          <input type="number" min="0" max={comp.maxScore}
-                            value={studentScores[name]?.[comp.id] ?? ""}
-                            onChange={e => updateScore(name, comp.id, e.target.value)}
-                            className="w-16 px-2 py-1 border border-gray-200 rounded-lg text-sm text-center focus:outline-none focus:border-indigo-400"
-                            placeholder="-" />
-                        ) : (
-                          <span className={'text-sm font-medium ' + (
-                            (studentScores[name]?.[comp.id] ?? -1) >= comp.maxScore * 0.7 ? "text-green-600" :
-                            (studentScores[name]?.[comp.id] ?? -1) >= comp.maxScore * 0.5 ? "text-amber-600" :
-                            (studentScores[name]?.[comp.id] ?? -1) >= 0 ? "text-red-600" : "text-gray-300"
-                          )}>
-                            {studentScores[name]?.[comp.id] ?? "-"}
-                          </span>
-                        )}
-                        <span className="text-[10px] text-gray-400 ml-1">/ {comp.maxScore}</span>
-                      </td>
-                    ))}
-                    <td className="text-center bg-purple-50/50">
-                      <span className="font-bold text-gray-800">{final === "-" ? "-" : final}</span>
-                      <span className={'ml-1 text-xs font-bold ' + letterColor}>{letter}</span>
-                    </td>
-                    {role === "lecturer" && editScores && (
-                      <td>
-                        <button onClick={() => removeStudent(name)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
+              {students.length === 0 ? (
+                <tr>
+                  <td colSpan={components.length + 2} className="p-6 text-center text-gray-400">
+                    Belum ada data nilai siswa.
+                  </td>
+                </tr>
+              ) : (
+                students.map((student) => {
+                  const finalGrade = calculateFinalGrade(student.grades);
+                  return (
+                    <tr key={student.studentId} className="border-b border-gray-150 hover:bg-gray-50">
+                      <td className="p-4 font-bold text-gray-700">{student.displayName}</td>
+                      {components.map(c => {
+                        const scoreRecord = student.grades.find(g => g.componentId === c.id);
+                        return (
+                          <td key={c.id} className="p-4 font-mono text-gray-600">
+                            {scoreRecord ? scoreRecord.score : "-"}
+                          </td>
+                        );
+                      })}
+                      <td className="p-4 font-mono font-bold text-purple-700">{finalGrade}</td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
       )}
 
-      {role === "lecturer" && students.length > 0 && (
+      {/* Statistics dashboard widgets for lecturer */}
+      {isLecturer && students.length > 0 && !loading && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           {[
-            { label: "Rata-rata Kelas", value: (() => {
-              const grades = students.map(s => parseFloat(calculateFinalGrade(s))).filter(g => !isNaN(g));
-              return grades.length > 0 ? (grades.reduce((a, b) => a + b, 0) / grades.length).toFixed(1) : "-";
-            })(), icon: "📈", color: "blue" },
-            { label: "Nilai Tertinggi", value: (() => {
-              const grades = students.map(s => parseFloat(calculateFinalGrade(s))).filter(g => !isNaN(g));
-              return grades.length > 0 ? Math.max(...grades).toFixed(1) : "-";
-            })(), icon: "🏆", color: "green" },
-            { label: "Nilai Terendah", value: (() => {
-              const grades = students.map(s => parseFloat(calculateFinalGrade(s))).filter(g => !isNaN(g));
-              return grades.length > 0 ? Math.min(...grades).toFixed(1) : "-";
-            })(), icon: "📉", color: "red" },
-            { label: "Tuntas (≥65)", value: (() => {
-              const passed = students.filter(s => parseFloat(calculateFinalGrade(s)) >= 65).length;
-              return passed + '/' + students.length + ' (' + Math.round(passed / students.length * 100) + '%)';
-            })(), icon: "✅", color: "purple" },
+            {
+              label: "Rata-rata Kelas",
+              value: (() => {
+                const total = students.reduce((sum, s) => sum + calculateFinalGrade(s.grades), 0);
+                return (total / students.length).toFixed(1);
+              })(),
+              icon: "📊",
+              color: "blue"
+            },
+            {
+              label: "Nilai Tertinggi",
+              value: (() => {
+                const grades = students.map(s => calculateFinalGrade(s.grades));
+                return Math.max(...grades).toFixed(1);
+              })(),
+              icon: "🏆",
+              color: "green"
+            },
+            {
+              label: "Nilai Terendah",
+              value: (() => {
+                const grades = students.map(s => calculateFinalGrade(s.grades));
+                return Math.min(...grades).toFixed(1);
+              })(),
+              icon: "📉",
+              color: "red"
+            },
+            {
+              label: "Tuntas (≥65)",
+              value: (() => {
+                const passed = students.filter(s => calculateFinalGrade(s.grades) >= 65).length;
+                return passed + '/' + students.length + ' (' + Math.round(passed / students.length * 100) + '%)';
+              })(),
+              icon: "✅",
+              color: "purple"
+            }
           ].map((stat, i) => (
-            <div key={i} className="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+            <div key={i} className="bg-white border border-gray-200 rounded-2xl p-4 text-center shadow-sm">
               <span className="text-2xl">{stat.icon}</span>
-              <div className={'text-2xl font-bold mt-1 ' + (
+              <div className={`text-2xl font-bold mt-1 ${
                 stat.color === "blue" ? "text-blue-600" : stat.color === "green" ? "text-green-600" :
                 stat.color === "red" ? "text-red-600" : "text-purple-600"
-              )}>{stat.value}</div>
+              }`}>{stat.value}</div>
               <div className="text-xs text-gray-500 mt-0.5">{stat.label}</div>
             </div>
           ))}
         </div>
       )}
 
-      {role === "student" && students.length > 0 && (
-        <div className="bg-blue-50 rounded-2xl p-5 mt-6 text-center">
-          <span className="text-3xl">📊</span>
-          <p className="text-sm text-blue-700 mt-2">
-            Di mode production, kamu hanya bisa melihat nilaimu sendiri. Nilai di atas adalah data demo.
-          </p>
+      {/* Add Component Modal */}
+      {showAddComponent && (
+        <div className="modal-overlay" onClick={() => setShowAddComponent(false)}>
+          <form
+            onSubmit={handleAddComponent}
+            className="modal-content max-w-sm space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-gray-800">➕ Tambah Komponen Nilai</h3>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">Nama Komponen</label>
+              <input
+                type="text"
+                required
+                placeholder="Contoh: UTS, UAS, Tugas 1..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none"
+                value={newComponent.name}
+                onChange={(e) => setNewComponent({ ...newComponent, name: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Bobot (0.0 s/d 1.0)</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none"
+                  value={newComponent.weight}
+                  onChange={(e) => setNewComponent({ ...newComponent, weight: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Nilai Maksimal</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none"
+                  value={newComponent.maxScore}
+                  onChange={(e) => setNewComponent({ ...newComponent, maxScore: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl font-semibold"
+              >
+                Simpan Komponen
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddComponent(false)}
+                className="px-4 py-2 bg-gray-150 text-gray-700 rounded-xl"
+              >
+                Batal
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Add/Edit Grade Modal */}
+      {showAddGrade && (
+        <div className="modal-overlay" onClick={() => setShowAddGrade(false)}>
+          <form
+            onSubmit={handleAddGrade}
+            className="modal-content max-w-sm space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-gray-800">📝 Masukkan / Update Nilai</h3>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">Komponen Nilai</label>
+              <select
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none"
+                value={newGrade.componentId}
+                onChange={(e) => setNewGrade({ ...newGrade, componentId: e.target.value })}
+              >
+                <option value="">Pilih Komponen...</option>
+                {components.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} (Max: {c.maxScore})</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">Siswa</label>
+              <select
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none"
+                value={newGrade.studentId}
+                onChange={(e) => setNewGrade({ ...newGrade, studentId: e.target.value })}
+              >
+                <option value="">Pilih Siswa...</option>
+                {enrolledStudents.map(s => (
+                  <option key={s.id} value={s.id}>{s.displayName || s.username}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">Nilai</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                required
+                placeholder="Skor..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none"
+                value={newGrade.score}
+                onChange={(e) => setNewGrade({ ...newGrade, score: e.target.value })}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl font-semibold"
+              >
+                Simpan Nilai
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddGrade(false)}
+                className="px-4 py-2 bg-gray-150 text-gray-700 rounded-xl"
+              >
+                Batal
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

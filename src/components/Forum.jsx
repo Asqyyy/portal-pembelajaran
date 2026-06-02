@@ -1,311 +1,360 @@
 import { useState, useEffect } from "react";
 import { api } from "../api/client";
 
-export default function Forum({ courseId, role }) {
+export default function Forum({ courseId, role, user }) {
   const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const [activeThread, setActiveThread] = useState(null); // thread details object
   const [showNewThread, setShowNewThread] = useState(false);
-  const [activeThread, setActiveThread] = useState(null);
+  
+  // Create Thread state
   const [newThread, setNewThread] = useState({ title: "", content: "", isAnnouncement: false });
+  // Reply state
   const [replyContent, setReplyContent] = useState("");
 
-  // Load threads from API
-  useEffect(() => {
+  const loadThreads = async () => {
     setLoading(true);
     setError("");
-    api.getForumThreads(courseId)
-      .then((data) => {
-        setThreads(Array.isArray(data) ? data : (data.threads || []));
-      })
-      .catch(() => {
-        setError("Gagal memuat forum.");
-        // Fallback to localStorage
-        try {
-          const cached = JSON.parse(localStorage.getItem('forum_' + courseId) || "[]");
-          if (cached.length > 0) setThreads(cached);
-        } catch {}
-      })
-      .finally(() => setLoading(false));
+    try {
+      const data = await api.getForumThreads(courseId);
+      setThreads(data);
+    } catch (err) {
+      setError("Gagal memuat forum: " + (err.message || err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadThreads();
   }, [courseId]);
 
-  // Cache in localStorage
-  useEffect(() => {
-    if (threads.length > 0) {
-      localStorage.setItem('forum_' + courseId, JSON.stringify(threads));
-    }
-  }, [threads, courseId]);
-
-  const createThread = async () => {
+  const handleCreateThread = async (e) => {
+    e.preventDefault();
+    setError("");
     if (!newThread.title.trim() || !newThread.content.trim()) return;
-    const threadData = {
-      courseId,
-      title: newThread.title,
-      content: newThread.content,
-      isAnnouncement: newThread.isAnnouncement,
-      author: role === "lecturer" ? "Pengajar" : "Siswa",
-      role: role,
-    };
 
     try {
-      const saved = await api.createThread(threadData);
-      setThreads(prev => [{ ...saved, id: saved.id || Date.now(), createdAt: new Date().toLocaleString("id-ID"), replies: saved.replies || [] }, ...prev]);
-    } catch {
-      // Fallback
-      const thread = {
-        id: Date.now(),
-        ...threadData,
-        createdAt: new Date().toLocaleString("id-ID"),
-        replies: [],
-        pinned: newThread.isAnnouncement,
-      };
-      setThreads(prev => [thread, ...prev]);
+      await api.createThread({
+        course_id: courseId,
+        title: newThread.title,
+        content: newThread.content,
+        is_announcement: newThread.isAnnouncement
+      });
+      setSuccess("Diskusi baru berhasil ditambahkan!");
+      setShowNewThread(false);
+      setNewThread({ title: "", content: "", isAnnouncement: false });
+      loadThreads();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal membuat thread: " + (err.message || err));
     }
-    setNewThread({ title: "", content: "", isAnnouncement: false });
-    setShowNewThread(false);
   };
 
-  const addReply = async (threadId) => {
-    if (!replyContent.trim()) return;
-    const replyData = {
-      id: Date.now(),
-      content: replyContent,
-      author: role === "lecturer" ? "Pengajar" : "Siswa",
-      role: role,
-      createdAt: new Date().toLocaleString("id-ID"),
-      isVerified: false,
-    };
-
-    setThreads(prev => prev.map(t => {
-      if (t.id !== threadId) return t;
-      return { ...t, replies: [...t.replies, replyData] };
-    }));
-    setReplyContent("");
-
-    // Try API
+  const handleActiveThread = async (threadId) => {
+    setLoading(true);
+    setError("");
     try {
-      await api.replyThread(threadId, replyContent);
-    } catch {}
+      const threadDetails = await api.getThread(threadId);
+      setActiveThread(threadDetails);
+    } catch (err) {
+      setError("Gagal memuat diskusi: " + (err.message || err));
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const markVerified = async (threadId, replyId) => {
-    setThreads(prev => prev.map(t => {
-      if (t.id !== threadId) return t;
-      return {
-        ...t,
-        replies: t.replies.map(r => r.id === replyId ? { ...r, isVerified: true } : r)
-      };
-    }));
-    try { await api.verifyReply(replyId); } catch {}
+  const handleAddReply = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!replyContent.trim()) return;
+
+    try {
+      const reply = await api.replyThread(activeThread.id, replyContent);
+      setSuccess("Balasan berhasil dikirim!");
+      setReplyContent("");
+      // Refresh active thread details
+      handleActiveThread(activeThread.id);
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal mengirim balasan: " + (err.message || err));
+    }
   };
 
-  const deleteThread = (threadId) => {
-    setThreads(prev => prev.filter(t => t.id !== threadId));
+  const handleDeleteThread = async (threadId) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus diskusi ini?")) return;
+    setError("");
+    try {
+      await api.deleteThread(threadId);
+      setSuccess("Diskusi berhasil dihapus!");
+      setActiveThread(null);
+      loadThreads();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal menghapus diskusi: " + (err.message || err));
+    }
   };
 
-  const deleteReply = (threadId, replyId) => {
-    setThreads(prev => prev.map(t => {
-      if (t.id !== threadId) return t;
-      return { ...t, replies: t.replies.filter(r => r.id !== replyId) };
-    }));
+  const handleDeleteReply = async (replyId) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus balasan ini?")) return;
+    setError("");
+    try {
+      await api.deleteReply(replyId);
+      setSuccess("Balasan berhasil dihapus!");
+      handleActiveThread(activeThread.id);
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal menghapus balasan: " + (err.message || err));
+    }
   };
 
-  if (loading) {
-    return <div className="text-center py-12"><span className="text-gray-400">Loading forum...</span></div>;
-  }
+  const handleVerifyReply = async (replyId) => {
+    setError("");
+    try {
+      await api.verifyReply(replyId);
+      setSuccess("Balasan berhasil diverifikasi!");
+      handleActiveThread(activeThread.id);
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Gagal memverifikasi balasan: " + (err.message || err));
+    }
+  };
 
-  if (error) {
-    return <div className="text-center py-12"><span className="text-red-400">Error: {error}</span></div>;
-  }
-
-  // Thread Detail View
-  if (activeThread) {
-    const thread = threads.find(t => t.id === activeThread);
-    if (!thread) return null;
-
-    const sortedReplies = [...(thread.replies || [])].sort((a, b) => {
-      if (a.isVerified && !b.isVerified) return -1;
-      if (!a.isVerified && b.isVerified) return 1;
-      return 0;
-    });
-
-    return (
-      <div>
-        <button onClick={() => setActiveThread(null)} className="text-purple-600 hover:text-purple-800 text-sm mb-4 flex items-center gap-1">
-          ← Kembali ke Forum
-        </button>
-
-        <div className={'rounded-2xl p-6 mb-6 ' + (thread.isAnnouncement ? "bg-amber-50 border border-amber-200" : "bg-white border border-gray-200")}>
-          <div className="flex items-center gap-2 mb-2">
-            {thread.isAnnouncement && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">📌 Pengumuman</span>}
-            <span className={'text-xs px-2 py-0.5 rounded-full ' + (thread.role === "lecturer" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700")}>
-              {thread.role === "lecturer" ? "👨🏫" : "👨🎓"} {thread.author}
-            </span>
-            <span className="text-xs text-gray-400">{thread.createdAt}</span>
-          </div>
-          <h3 className="text-xl font-bold text-gray-800 mb-2">{thread.title}</h3>
-          <p className="text-gray-600 whitespace-pre-line">{thread.content}</p>
-          {(role === "lecturer" || thread.role === "lecturer") && (
-            <button onClick={() => deleteThread(thread.id)} className="text-xs text-red-400 hover:text-red-600 mt-3">
-              🗑 Hapus Thread
-            </button>
-          )}
-        </div>
-
-        <h4 className="font-semibold text-gray-700 mb-4">{thread.replies?.length || 0} Balasan</h4>
-
-        {sortedReplies.map(reply => (
-          <div key={reply.id} className={'rounded-xl p-4 mb-3 ml-0 md:ml-6 border ' + (
-            reply.isVerified ? "bg-green-50 border-green-200" : "bg-white border-gray-200"
-          )}>
-            <div className="flex items-center gap-2 mb-1">
-              <span className={'text-xs px-2 py-0.5 rounded-full ' + (reply.role === "lecturer" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700")}>
-                {reply.role === "lecturer" ? "👨🏫" : "👨🎓"} {reply.author}
-              </span>
-              <span className="text-xs text-gray-400">{reply.createdAt}</span>
-              {reply.isVerified && (
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✅ Jawaban Resmi</span>
-              )}
-            </div>
-            <p className="text-gray-600 text-sm whitespace-pre-line">{reply.content}</p>
-            <div className="flex items-center gap-3 mt-2">
-              {role === "lecturer" && !reply.isVerified && (
-                <button onClick={() => markVerified(thread.id, reply.id)}
-                  className="text-xs text-green-600 hover:text-green-800 font-medium">
-                  ✅ Tandai Jawaban Resmi
-                </button>
-              )}
-              {role === "lecturer" && (
-                <button onClick={() => deleteReply(thread.id, reply.id)}
-                  className="text-xs text-red-400 hover:text-red-600">
-                  🗑 Hapus
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-
-        <div className="bg-white border border-gray-200 rounded-xl p-4 mt-4">
-          <textarea value={replyContent} onChange={e => setReplyContent(e.target.value)}
-            placeholder="Tulis balasanmu..."
-            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm h-24 focus:outline-none focus:border-purple-400 resize-none" />
-          <div className="flex justify-end mt-3">
-            <button onClick={() => addReply(thread.id)}
-              className="px-5 py-2.5 bg-purple-500 text-white rounded-xl text-sm font-semibold hover:bg-purple-600 transition-colors">
-              💬 Kirim Balasan
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // New Thread Form
-  if (showNewThread) {
-    return (
-      <div>
-        <button onClick={() => setShowNewThread(false)} className="text-purple-600 hover:text-purple-800 text-sm mb-4 flex items-center gap-1">
-          ← Kembali
-        </button>
-        <div className="bg-white border border-gray-200 rounded-2xl p-6">
-          <h3 className="text-xl font-bold text-gray-800 mb-4">➕ Buat Thread Baru</h3>
-          <input type="text" value={newThread.title} onChange={e => setNewThread(p => ({ ...p, title: e.target.value }))}
-            placeholder="Judul thread..."
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm mb-4 focus:outline-none focus:border-purple-500" />
-          <textarea value={newThread.content} onChange={e => setNewThread(p => ({ ...p, content: e.target.value }))}
-            placeholder="Isi thread..."
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm h-32 mb-4 resize-none focus:outline-none focus:border-purple-500" />
-          {role === "lecturer" && (
-            <label className="flex items-center gap-2 mb-4 cursor-pointer">
-              <input type="checkbox" checked={newThread.isAnnouncement}
-                onChange={e => setNewThread(p => ({ ...p, isAnnouncement: e.target.checked }))}
-                className="w-4 h-4 text-purple-600 rounded" />
-              <span className="text-sm text-gray-600">📌 Jadikan pengumuman (pinned, tidak bisa dibalas)</span>
-            </label>
-          )}
-          <div className="flex gap-3">
-            <button onClick={createThread}
-              className="px-6 py-3 bg-purple-500 text-white rounded-xl font-semibold hover:bg-purple-600 transition-colors">
-              Posting Thread
-            </button>
-            <button onClick={() => setShowNewThread(false)}
-              className="px-6 py-3 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition-colors">
-              Batal
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Main Forum List
-  const announcements = threads.filter(t => t.isAnnouncement);
-  const normalThreads = threads.filter(t => !t.isAnnouncement);
+  const isLecturer = role === "lecturer" || role === "admin";
+  const currentUser = user || {};
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="text-lg font-bold text-gray-800">💬 Forum Diskusi</h3>
-          <p className="text-sm text-gray-500">{threads.length} thread</p>
+    <div className="space-y-4">
+      {success && (
+        <div className="p-3 bg-green-50 border border-green-100 text-green-600 rounded-xl text-sm">
+          ✅ {success}
         </div>
-        <button onClick={() => { setNewThread({ title: "", content: "", isAnnouncement: false }); setShowNewThread(true); }}
-          className="px-5 py-2.5 bg-purple-500 text-white rounded-xl text-sm font-semibold hover:bg-purple-600 transition-colors">
-          ➕ Thread Baru
-        </button>
-      </div>
+      )}
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm">
+          ⚠️ {error}
+        </div>
+      )}
 
-      {threads.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-2xl">
-          <span className="text-5xl">💬</span>
-          <p className="text-gray-500 mt-3">Belum ada diskusi. Mulai thread pertama!</p>
-        </div>
-      ) : (
-        <>
-          {announcements.length > 0 && (
-            <div className="mb-6">
-              <h4 className="text-sm font-semibold text-amber-600 mb-3">📌 Pengumuman</h4>
-              {announcements.map(thread => (
-                <div key={thread.id} className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-2">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">📌 Pengumuman</span>
-                    <span className="text-xs text-gray-400">{thread.createdAt}</span>
-                  </div>
-                  <h4 className="font-semibold text-gray-800">{thread.title}</h4>
-                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">{thread.content}</p>
-                  <button onClick={() => setActiveThread(thread.id)}
-                    className="text-xs text-purple-600 hover:underline mt-2">Lihat selengkapnya →</button>
-                </div>
-              ))}
+      {/* VIEW: THREAD LIST */}
+      {!activeThread && !showNewThread && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-gray-800 text-lg">💬 FORUM DISKUSI</h3>
+            <button
+              onClick={() => setShowNewThread(true)}
+              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl font-semibold text-sm shadow-md hover:shadow-lg transition-all"
+            >
+              ➕ Mulai Diskusi
+            </button>
+          </div>
+
+          {loading ? (
+            <p className="text-center py-6 text-gray-400">Memuat forum...</p>
+          ) : threads.length === 0 ? (
+            <div className="text-center py-10 bg-gray-50 rounded-2xl border border-dashed">
+              <p className="text-gray-400">Belum ada diskusi di forum ini.</p>
             </div>
-          )}
-
-          {normalThreads.length > 0 && (
-            <div>
-              {announcements.length > 0 && <h4 className="text-sm font-semibold text-gray-500 mb-3">🧵 Diskusi</h4>}
-              {normalThreads.map(thread => (
-                <div key={thread.id} onClick={() => setActiveThread(thread.id)}
-                  className="bg-white border border-gray-200 rounded-xl p-5 mb-3 hover:border-purple-300 hover:shadow-sm transition-all cursor-pointer">
+          ) : (
+            <div className="space-y-3">
+              {threads.map((thread) => (
+                <div
+                  key={thread.id}
+                  onClick={() => handleActiveThread(thread.id)}
+                  className={`p-5 bg-white border rounded-2xl shadow-sm hover:border-purple-300 hover:shadow-md transition-all cursor-pointer border-gray-200 ${
+                    thread.isAnnouncement ? "border-l-4 border-l-red-500" : ""
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={'text-xs px-2 py-0.5 rounded-full ' + (thread.role === "lecturer" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700")}>
-                          {thread.role === "lecturer" ? "👨🏫 Pengajar" : "👨🎓 Siswa"}
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                          thread.isAnnouncement 
+                            ? "bg-red-50 text-red-700 border border-red-100" 
+                            : "bg-blue-50 text-blue-700 border border-blue-100"
+                        }`}>
+                          {thread.isAnnouncement ? "📢 Pengumuman" : "💬 Diskusi"}
                         </span>
-                        <span className="text-xs text-gray-400">{thread.createdAt}</span>
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(thread.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </span>
                       </div>
-                      <h4 className="font-semibold text-gray-800 truncate">{thread.title}</h4>
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-2">{thread.content}</p>
+                      <h4 className="font-bold text-gray-800 text-sm truncate">{thread.title}</h4>
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{thread.content}</p>
+                      <p className="text-[10px] text-gray-400 mt-2 font-medium">Dibuat oleh: {thread.authorName}</p>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <span className="text-xs text-gray-400">{thread.replies?.length || 0} 💬</span>
+                    <div className="text-right flex-shrink-0 text-xs text-gray-400 whitespace-nowrap">
+                      {thread.replyCount || 0} 💬
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </>
+        </div>
+      )}
+
+      {/* VIEW: CREATE THREAD */}
+      {showNewThread && (
+        <form onSubmit={handleCreateThread} className="space-y-4 max-w-lg mx-auto">
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-gray-800 text-lg">➕ Buat Topik Diskusi Baru</h3>
+            <button
+              type="button"
+              onClick={() => setShowNewThread(false)}
+              className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-xl text-xs font-bold"
+            >
+              ← Batal
+            </button>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">Judul Topik</label>
+            <input
+              type="text"
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-100"
+              value={newThread.title}
+              onChange={(e) => setNewThread({ ...newThread, title: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">Isi Diskusi</label>
+            <textarea
+              rows={5}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-100"
+              value={newThread.content}
+              onChange={(e) => setNewThread({ ...newThread, content: e.target.value })}
+            />
+          </div>
+
+          {isLecturer && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="isAnn"
+                className="rounded text-purple-600 focus:ring-purple-100"
+                checked={newThread.isAnnouncement}
+                onChange={(e) => setNewThread({ ...newThread, isAnnouncement: e.target.checked })}
+              />
+              <label htmlFor="isAnn" className="text-xs font-semibold text-gray-750 cursor-pointer">
+                Jadikan sebagai Pengumuman Resmi Kelas (Announcement)
+              </label>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="w-full py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl font-bold"
+          >
+            Mulai Diskusi
+          </button>
+        </form>
+      )}
+
+      {/* VIEW: THREAD DETAIL & REPLIES */}
+      {activeThread && (
+        <div className="space-y-5">
+          <div className="flex justify-between items-center border-b border-gray-150 pb-3">
+            <button
+              onClick={() => { setActiveThread(null); loadThreads(); }}
+              className="px-3 py-1.5 bg-gray-100 text-gray-650 hover:bg-gray-200 rounded-xl text-xs font-bold transition-colors"
+            >
+              ← Kembali ke Forum
+            </button>
+
+            {(isLecturer || activeThread.authorId === currentUser.id) && (
+              <button
+                onClick={() => handleDeleteThread(activeThread.id)}
+                className="px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors"
+              >
+                Hapus Topik 🗑
+              </button>
+            )}
+          </div>
+
+          {/* Main Post */}
+          <div className="bg-purple-50/30 p-5 rounded-2xl border border-purple-100/50 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-gray-800 text-sm">{activeThread.authorName}</span>
+              <span className="text-[10px] text-gray-400">
+                {new Date(activeThread.createdAt).toLocaleString("id-ID")}
+              </span>
+            </div>
+            <h4 className="font-extrabold text-gray-900 text-base">{activeThread.title}</h4>
+            <p className="text-gray-700 text-sm whitespace-pre-wrap">{activeThread.content}</p>
+          </div>
+
+          {/* Replies Section */}
+          <div className="space-y-3">
+            <h5 className="font-bold text-gray-800 text-sm">💬 Balasan ({activeThread.replies?.length || 0})</h5>
+            
+            {activeThread.replies?.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">Belum ada balasan. Jadilah yang pertama menjawab!</p>
+            ) : (
+              <div className="space-y-2">
+                {activeThread.replies.map(reply => (
+                  <div key={reply.id} className="p-4 bg-white border border-gray-150 rounded-xl space-y-2 relative">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gray-700 text-xs">{reply.authorName}</span>
+                        {reply.isVerified && (
+                          <span className="px-2 py-0.5 bg-green-150 text-green-700 rounded-full text-[9px] font-bold">
+                            ✓ Terverifikasi Pengajar
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {isLecturer && !reply.isVerified && (
+                          <button
+                            onClick={() => handleVerifyReply(reply.id)}
+                            className="text-[10px] text-green-600 hover:underline font-bold"
+                          >
+                            Verifikasi
+                          </button>
+                        )}
+                        {(isLecturer || reply.authorId === currentUser.id) && (
+                          <button
+                            onClick={() => handleDeleteReply(reply.id)}
+                            className="text-[10px] text-red-400 hover:text-red-650"
+                          >
+                            Hapus
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-gray-600 text-xs whitespace-pre-wrap">{reply.content}</p>
+                    <span className="text-[9px] text-gray-450 block text-right">
+                      {new Date(reply.createdAt).toLocaleString("id-ID")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Add Reply form */}
+          <form onSubmit={handleAddReply} className="space-y-2">
+            <textarea
+              rows={3}
+              required
+              placeholder="Tulis balasan Anda..."
+              className="w-full p-3 border border-gray-300 rounded-xl text-xs focus:outline-none"
+              value={replyContent}
+              onChange={(e) => setReplyContent(e.target.value)}
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl text-xs font-bold"
+            >
+              Kirim Balasan
+            </button>
+          </form>
+        </div>
       )}
     </div>
   );

@@ -1,12 +1,31 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 
 export default function Navbar({ role, user, onLogout }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
+
+  // Rule: Close dropdowns on route change
+  useEffect(() => {
+    setShowDropdown(false);
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  // Keyboard navigation: Escape closes dropdown
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setShowDropdown(false);
+        setMobileOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   return (
     <nav className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg">
@@ -17,7 +36,16 @@ export default function Navbar({ role, user, onLogout }) {
           className="flex items-center gap-3 cursor-pointer flex-shrink-0"
           onClick={() => setMobileOpen(false)}
         >
-          <img src="/logo.png" alt="Portal Pembelajaran Logo" className="w-8 h-8 md:w-10 md:h-10 drop-shadow-md" />
+          {logoFailed ? (
+            <span className="text-xl font-black text-white">🏛️</span>
+          ) : (
+            <img 
+              src="/logo.png" 
+              alt="Portal Pembelajaran Logo" 
+              className="w-8 h-8 md:w-10 md:h-10 drop-shadow-md" 
+              onError={() => setLogoFailed(true)}
+            />
+          )}
           <span className="text-lg md:text-xl font-bold text-white tracking-tight">
             Portal<span className="text-purple-300">Pembelajaran</span>
           </span>
@@ -51,7 +79,7 @@ export default function Navbar({ role, user, onLogout }) {
             {showDropdown && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowDropdown(false)} />
-                <div className="absolute top-full mt-2 right-0 bg-white rounded-xl shadow-2xl p-2 min-w-[220px] z-20 animate-[fadeIn_0.2s_ease]">
+                <div className="absolute top-full mt-2 right-0 bg-white rounded-xl shadow-2xl p-2 min-w-[220px] z-25 animate-[fadeIn_0.2s_ease]">
                   <Link
                     to="/courses"
                     onClick={() => setShowDropdown(false)}
