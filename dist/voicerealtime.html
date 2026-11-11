@@ -106,7 +106,12 @@
     </div>
 
     <script>
-        const API_KEY = "***REMOVED***";
+        // Key TIDAK disimpan di repo. Diminta sekali di browser lalu disimpan di localStorage perangkat ini.
+        let API_KEY = localStorage.getItem("CCAPI_KEY") || "";
+        if (!API_KEY) {
+            API_KEY = (prompt("Masukkan API key ccapi.us (hanya disimpan di browser ini):") || "").trim();
+            if (API_KEY) localStorage.setItem("CCAPI_KEY", API_KEY);
+        }
         const WS_URL = "wss://ccapi.us/v1/realtime?model=gpt-4o-realtime-preview";
 
         const callButton = document.getElementById("callButton");

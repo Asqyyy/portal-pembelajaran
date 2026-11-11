@@ -14,11 +14,11 @@ import time
 from mcp.server.fastmcp import FastMCP
 
 # === CONFIG ===
-VPS_HOST = "***REMOVED***"
+VPS_HOST = os.environ.get("VPS_HOST", "")
 VPS_USER = "root"
-VPS_PASSWORD = os.environ.get("VPS_PASSWORD", "***REMOVED***")
-OCE_WEBHOOK = os.environ.get("OCE_WEBHOOK", "http://***REMOVED***:8644/webhooks/oce-task")
-HERMES_WEBHOOK = os.environ.get("HERMES_WEBHOOK", "http://***REMOVED***:8644/webhooks/hermes-task")
+VPS_PASSWORD = os.environ.get("VPS_PASSWORD", "")
+OCE_WEBHOOK = os.environ.get("OCE_WEBHOOK", "")
+HERMES_WEBHOOK = os.environ.get("HERMES_WEBHOOK", "")
 
 mcp = FastMCP("oce-mcp", json_response=True)
 
@@ -84,7 +84,7 @@ def oce_chat(message: str, urgent: bool = False) -> str:
 
 @mcp.tool()
 def oce_vps_exec(command: str, timeout_sec: int = 15) -> str:
-    """Eksekusi perintah shell di VPS (***REMOVED***). Untuk deploy, cek status, manage Docker, dll.
+    """Eksekusi perintah shell di VPS. Untuk deploy, cek status, manage Docker, dll.
     
     Args:
         command: Perintah shell yang akan dijalankan di VPS
@@ -145,7 +145,7 @@ def oce_deploy(message: str = "Update from Antigravity") -> str:
     result = ssh_exec("cd /opt/learning-hub && bash start.sh && curl -s -o /dev/null -w '%{http_code}' http://localhost:5173/")
     if "error" in result:
         return f"❌ Deploy error: {result['error']}"
-    return f"🚀 Deploy selesai: {message}\nServer: http://***REMOVED***:5173\nStatus: {result.get('stdout', '?')[:200]}"
+    return f"🚀 Deploy selesai: {message}\nServer: http://{VPS_HOST}:5173\nStatus: {result.get('stdout', '?')[:200]}"
 
 
 @mcp.tool()

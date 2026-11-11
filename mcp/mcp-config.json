@@ -4,10 +4,11 @@
       "command": "python",
       "args": ["C:\\Users\\YOUR_USERNAME\\antigravity-mcp\\server.py"],
       "env": {
-        "VPS_PASSWORD": "***REMOVED***",
-        "OCE_WEBHOOK": "http://***REMOVED***:8644/webhooks/oce-task",
-        "HERMES_WEBHOOK": "http://***REMOVED***:8644/webhooks/hermes-task",
-        "GATEWAY_URL": "http://***REMOVED***:18789"
+        "VPS_HOST": "YOUR_VPS_HOST",
+        "VPS_PASSWORD": "YOUR_VPS_PASSWORD",
+        "OCE_WEBHOOK": "http://YOUR_VPS_HOST:8644/webhooks/oce-task",
+        "HERMES_WEBHOOK": "http://YOUR_VPS_HOST:8644/webhooks/hermes-task",
+        "GATEWAY_URL": "http://YOUR_VPS_HOST:18789"
       }
     }
   }
